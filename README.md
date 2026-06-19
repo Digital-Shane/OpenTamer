@@ -11,7 +11,7 @@ to disable due to system integrity protection but don't desire.
 OpenTamer can track apps, lower their priority, limit their CPU usage, or pause them when they are in the background. It
 also tries to restore anything it changed when a rule is removed, management is disabled, or the app exits.
 
-![](./assets/screenshots/0-overview.png)
+<img src="./assets/screenshots/0-overview.png" alt="OpenTamer overview panel" height="520">
 
 ## Table of Contents
 
@@ -46,7 +46,7 @@ always want to keep an eye on without opening the full panel.
 Rules are saved per app and re-applied as OpenTamer refreshes its process list. OpenTamer groups processes by app name by
 default, which keeps helper processes together in a way that is usually more useful for menu bar monitoring.
 
-![](/assets/screenshots/1-rules.png)
+<img src="./assets/screenshots/1-rules.png" alt="OpenTamer app management rules" height="280">
 
 ### Track Only
 
@@ -84,7 +84,7 @@ work, but should still be available instantly when selected again.
 
 OpenTamer's preferences are available from the `...` button in the main panel.
 
-![](/assets/screenshots/2-prefs.png)
+<img src="./assets/screenshots/2-prefs.png" alt="OpenTamer preferences" height="200">
 
 ### General
 
