@@ -1,0 +1,141 @@
+name: Go
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
+      - "packaging/Info.plist"
+      - "Justfile"
+      - "internal/macos/**/*.c"
+      - "internal/macos/**/*.h"
+      - "internal/macos/**/*.m"
+      - ".github/workflows/go.yaml"
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".golangci.yml"
+      - "packaging/Info.plist"
+      - "Justfile"
+      - "internal/macos/**/*.c"
+      - "internal/macos/**/*.h"
+      - "internal/macos/**/*.m"
+      - ".github/workflows/go.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: fmt and mod tidy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Check gofmt
+        run: |
+          unformatted="$(gofmt -l $(git ls-files '*.go'))"
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+  test:
+    name: test, vet, build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      CGO_LDFLAGS: -Wl,-no_warn_duplicate_libraries
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Build
+        run: go build -v ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      CGO_LDFLAGS: -Wl,-no_warn_duplicate_libraries
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6
+          args: --timeout=5m
+          install-mode: goinstall
+
+  release-metadata:
+    name: Validate changelog and plist match
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check changelog and Info.plist version
+        run: |
+          plist_version="$(awk '
+            /<key>CFBundleShortVersionString<\/key>/ {
+              getline
+              gsub(/^[[:space:]]*<string>|<\/string>[[:space:]]*$/, "", $0)
+              print
+              exit
+            }
+          ' packaging/Info.plist)"
+
+          changelog_version="$(awk '
+            /^## \[v[0-9]+\.[0-9]+\.[0-9]+\]/ {
+              version = $2
+              gsub(/^\[v|\]$/, "", version)
+              print version
+              exit
+            }
+          ' CHANGELOG.md)"
+
+          if [ -z "$plist_version" ]; then
+            echo "Could not find CFBundleShortVersionString in packaging/Info.plist."
+            exit 1
+          fi
+
+          if [ -z "$changelog_version" ]; then
+            echo "Could not find a released version heading like '## [v1.2.3]' in CHANGELOG.md."
+            exit 1
+          fi
+
+          if [ "$plist_version" != "$changelog_version" ]; then
+            echo "Info.plist version ($plist_version) must match latest CHANGELOG.md release ($changelog_version)."
+            exit 1
+          fi

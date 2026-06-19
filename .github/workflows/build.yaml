@@ -1,0 +1,203 @@
+name: Build
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "Justfile"
+      - "packaging/**"
+      - "assets/opentamer-icon.icns"
+      - "internal/macos/**/*.c"
+      - "internal/macos/**/*.h"
+      - "internal/macos/**/*.m"
+      - ".github/workflows/build.yaml"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.release.tag_name || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos-app:
+    name: macOS app bundle
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      artifact-name: ${{ steps.package.outputs.artifact-name }}
+    env:
+      OPENTAMER_CODESIGN_IDENTITY: ${{ secrets.OPENTAMER_CODESIGN_IDENTITY }}
+      OPENTAMER_CODESIGN_CERTIFICATE_BASE64: ${{ secrets.OPENTAMER_CODESIGN_CERTIFICATE_BASE64 }}
+      OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD }}
+      OPENTAMER_KEYCHAIN_PASSWORD: ${{ secrets.OPENTAMER_KEYCHAIN_PASSWORD }}
+    steps:
+      - name: Mask private signing identifiers
+        env:
+          OPENTAMER_NOTARY_APPLE_ID: ${{ secrets.OPENTAMER_NOTARY_APPLE_ID }}
+        run: |
+          mask_value() {
+            if [ -n "${1:-}" ]; then
+              echo "::add-mask::$1"
+            fi
+          }
+
+          if [ -n "${OPENTAMER_CODESIGN_IDENTITY:-}" ]; then
+            case "$OPENTAMER_CODESIGN_IDENTITY" in
+              *": "*) mask_value "${OPENTAMER_CODESIGN_IDENTITY#*: }" ;;
+              *) mask_value "$OPENTAMER_CODESIGN_IDENTITY" ;;
+            esac
+          fi
+
+          mask_value "$OPENTAMER_NOTARY_APPLE_ID"
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install just
+        run: brew list just >/dev/null 2>&1 || brew install just
+      - name: Import signing certificate
+        if: env.OPENTAMER_CODESIGN_CERTIFICATE_BASE64 != ''
+        run: |
+          : "${OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD:?Set OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD when importing a signing certificate.}"
+
+          keychain_password="${OPENTAMER_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+          keychain_path="$RUNNER_TEMP/opentamer-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/opentamer-signing.p12"
+
+          echo "$OPENTAMER_CODESIGN_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+      - name: Check configured signing identity
+        if: env.OPENTAMER_CODESIGN_IDENTITY != ''
+        run: |
+          if ! security find-identity -v -p codesigning | grep -Fq -- "$OPENTAMER_CODESIGN_IDENTITY"; then
+            echo "Configured Developer ID signing certificate was not found in the runner keychain."
+            exit 1
+          fi
+          echo "Configured signing identity is available."
+      - name: Require release signing and notarization credentials
+        if: github.event_name == 'release'
+        env:
+          OPENTAMER_NOTARY_APPLE_ID: ${{ secrets.OPENTAMER_NOTARY_APPLE_ID }}
+          OPENTAMER_NOTARY_PASSWORD: ${{ secrets.OPENTAMER_NOTARY_PASSWORD }}
+          OPENTAMER_NOTARY_TEAM_ID: ${{ secrets.OPENTAMER_NOTARY_TEAM_ID }}
+        run: |
+          : "${OPENTAMER_CODESIGN_IDENTITY:?Set OPENTAMER_CODESIGN_IDENTITY for release builds.}"
+          : "${OPENTAMER_CODESIGN_CERTIFICATE_BASE64:?Set OPENTAMER_CODESIGN_CERTIFICATE_BASE64 for release builds.}"
+          : "${OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD:?Set OPENTAMER_CODESIGN_CERTIFICATE_PASSWORD for release builds.}"
+          : "${OPENTAMER_NOTARY_APPLE_ID:?Set OPENTAMER_NOTARY_APPLE_ID for release builds.}"
+          : "${OPENTAMER_NOTARY_PASSWORD:?Set OPENTAMER_NOTARY_PASSWORD for release builds.}"
+          : "${OPENTAMER_NOTARY_TEAM_ID:?Set OPENTAMER_NOTARY_TEAM_ID for release builds.}"
+      - name: Check release tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/Info.plist)"
+          expected_tag="v${version}"
+
+          if [ "$RELEASE_TAG" != "$expected_tag" ]; then
+            echo "Release tag ($RELEASE_TAG) must match packaging/Info.plist version ($expected_tag)."
+            exit 1
+          fi
+      - name: Build app bundle
+        run: just build
+      - name: Verify bundle
+        run: |
+          test -x build/OpenTamer.app/Contents/MacOS/OpenTamer
+          test -f build/OpenTamer.app/Contents/Info.plist
+          test -f build/OpenTamer.app/Contents/Resources/opentamer-icon.icns
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/OpenTamer.app/Contents/Info.plist
+          codesign --verify --deep --strict --verbose=2 build/OpenTamer.app
+      - name: Notarize app bundle
+        if: github.event_name == 'release'
+        env:
+          OPENTAMER_NOTARY_APPLE_ID: ${{ secrets.OPENTAMER_NOTARY_APPLE_ID }}
+          OPENTAMER_NOTARY_PASSWORD: ${{ secrets.OPENTAMER_NOTARY_PASSWORD }}
+          OPENTAMER_NOTARY_TEAM_ID: ${{ secrets.OPENTAMER_NOTARY_TEAM_ID }}
+        run: |
+          codesign -dv --verbose=4 build/OpenTamer.app 2> "$RUNNER_TEMP/codesign-details.txt"
+          if ! grep -Fq "Authority=Developer ID Application" "$RUNNER_TEMP/codesign-details.txt"; then
+            echo "Release builds must be signed with a Developer ID Application certificate."
+            exit 1
+          fi
+          echo "Developer ID Application signature detected."
+
+          notary_zip="$RUNNER_TEMP/OpenTamer-notary.zip"
+          ditto -c -k --keepParent build/OpenTamer.app "$notary_zip"
+          xcrun notarytool submit "$notary_zip" \
+            --apple-id "$OPENTAMER_NOTARY_APPLE_ID" \
+            --password "$OPENTAMER_NOTARY_PASSWORD" \
+            --team-id "$OPENTAMER_NOTARY_TEAM_ID" \
+            --wait
+
+          xcrun stapler staple build/OpenTamer.app
+          xcrun stapler validate build/OpenTamer.app
+          spctl --assess --type execute --verbose=2 build/OpenTamer.app
+      - name: Package app bundle
+        id: package
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/Info.plist)"
+          arch="$(uname -m)"
+          artifact_name="OpenTamer-${version}-macos-${arch}"
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            artifact_name="${artifact_name}-pr-${PR_NUMBER}"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            artifact_name="${artifact_name}-run-${GITHUB_RUN_NUMBER}"
+          fi
+
+          zip_path="build/${artifact_name}.zip"
+          ditto -c -k --keepParent build/OpenTamer.app "$zip_path"
+          shasum -a 256 "$zip_path" > "${zip_path}.sha256"
+
+          echo "artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "zip-path=$zip_path" >> "$GITHUB_OUTPUT"
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.artifact-name }}
+          path: |
+            ${{ steps.package.outputs.zip-path }}
+            ${{ steps.package.outputs.zip-path }}.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: publish GitHub Release assets
+    if: github.event_name == 'release'
+    needs: macos-app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged app
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.macos-app.outputs.artifact-name }}
+          path: dist
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber --repo "$GH_REPO"
