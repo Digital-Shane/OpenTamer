@@ -166,6 +166,32 @@ static double OpenTamerDoubleFromRow(NSDictionary *row, NSString *key, double fa
     return [value doubleValue];
 }
 
+static NSString *OpenTamerCPUDisplayMode(NSString *mode) {
+    return [mode isEqualToString:@"system_normalized"] ? @"system_normalized" : @"per_core_process";
+}
+
+static BOOL OpenTamerUsesSystemNormalizedCPU(NSString *mode) {
+    return [OpenTamerCPUDisplayMode(mode) isEqualToString:@"system_normalized"];
+}
+
+static double OpenTamerSystemCPUFromRow(NSDictionary *row) {
+    return OpenTamerDoubleFromRow(row, @"systemCPUPercent", OpenTamerDoubleFromRow(row, @"cpuPercent", 0));
+}
+
+static double OpenTamerDisplayCPUFromRow(NSDictionary *row, NSString *mode) {
+    if (OpenTamerUsesSystemNormalizedCPU(mode)) {
+        return OpenTamerSystemCPUFromRow(row);
+    }
+    return OpenTamerDoubleFromRow(row, @"cpuPercent", OpenTamerSystemCPUFromRow(row));
+}
+
+static double OpenTamerAverageDisplayCPUFromRow(NSDictionary *row, NSString *mode) {
+    if (OpenTamerUsesSystemNormalizedCPU(mode)) {
+        return OpenTamerDoubleFromRow(row, @"averageSystemCPUPercent", OpenTamerSystemCPUFromRow(row));
+    }
+    return OpenTamerDoubleFromRow(row, @"averageCPUPercent", OpenTamerDoubleFromRow(row, @"cpuPercent", 0));
+}
+
 static NSColor *OpenTamerGraphColor(NSUInteger index) {
     switch (index % 10) {
         case 0:
@@ -379,14 +405,15 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     NSDictionary *row = [action[@"row"] isKindOfClass:NSDictionary.class] ? action[@"row"] : @{};
     NSString *kind = [action[@"kind"] isKindOfClass:NSString.class] ? action[@"kind"] : @"";
     NSString *name = OpenTamerStringFromValue(row[@"name"], @"Unknown");
-    double systemCPU = OpenTamerDoubleFromRow(row, @"systemCPUPercent", OpenTamerDoubleFromRow(row, @"cpuPercent", 0));
-    double averageCPU = OpenTamerDoubleFromRow(row, @"averageSystemCPUPercent", systemCPU);
+    NSString *displayMode = OpenTamerCPUDisplayMode(OpenTamerStringFromValue(action[@"cpuDisplayMode"], @"per_core_process"));
+    double displayCPU = OpenTamerDisplayCPUFromRow(row, displayMode);
+    double averageCPU = OpenTamerAverageDisplayCPUFromRow(row, displayMode);
     NSString *right = [NSString stringWithFormat:@"%@  %@",
-                       OpenTamerFormattedStatusPercent(systemCPU),
+                       OpenTamerFormattedStatusPercent(displayCPU),
                        OpenTamerFormattedStatusPercent(averageCPU)];
     if ([kind isEqualToString:@"managed"]) {
         NSString *rule = OpenTamerStringFromValue(row[@"ruleLabel"], @"Rule");
-        right = [NSString stringWithFormat:@"%@  %@", OpenTamerFormattedStatusPercent(systemCPU), rule];
+        right = [NSString stringWithFormat:@"%@  %@", OpenTamerFormattedStatusPercent(displayCPU), rule];
     }
 
     NSMutableParagraphStyle *nameStyle = [[NSMutableParagraphStyle alloc] init];
@@ -732,6 +759,19 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     return [value isKindOfClass:NSArray.class] ? value : @[];
 }
 
+- (double)cpuGraphCurrentCPU {
+    id pointsObject = [self cpuGraph][@"points"];
+    if (![pointsObject isKindOfClass:NSArray.class]) {
+        return [self totalCPU];
+    }
+    NSArray *points = pointsObject;
+    NSDictionary *point = [points.lastObject isKindOfClass:NSDictionary.class] ? points.lastObject : nil;
+    if (point == nil) {
+        return [self totalCPU];
+    }
+    return OpenTamerDoubleFromRow(point, @"totalCPU", [self totalCPU]);
+}
+
 - (BOOL)boolPreference:(NSString *)key fallback:(BOOL)fallback {
     id value = [self preferences][key];
     if (value == nil || value == [NSNull null] || ![value respondsToSelector:@selector(boolValue)]) {
@@ -819,8 +859,23 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 }
 
 - (double)systemCPUPercentForRow:(NSDictionary *)row {
-    double rowCPU = [self doubleFromRow:row key:@"cpuPercent" fallback:0];
-    return [self doubleFromRow:row key:@"systemCPUPercent" fallback:rowCPU];
+    return OpenTamerSystemCPUFromRow(row);
+}
+
+- (NSString *)cpuDisplayMode {
+    return OpenTamerCPUDisplayMode([self stringPreference:@"cpuDisplayMode" fallback:@"per_core_process"]);
+}
+
+- (NSString *)cpuDisplayLabel {
+    return OpenTamerUsesSystemNormalizedCPU([self cpuDisplayMode]) ? @"System CPU" : @"Process CPU";
+}
+
+- (NSString *)topProcessesCPULabel {
+    return OpenTamerUsesSystemNormalizedCPU([self cpuDisplayMode]) ? @"system CPU" : @"process CPU";
+}
+
+- (double)displayCPUPercentForRow:(NSDictionary *)row {
+    return OpenTamerDisplayCPUFromRow(row, [self cpuDisplayMode]);
 }
 
 - (NSString *)stringFromValue:(id)value fallback:(NSString *)fallback {
@@ -832,7 +887,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 }
 
 - (NSString *)cpuTitleForRow:(NSDictionary *)row {
-    return [self formattedStatusPercent:[self systemCPUPercentForRow:row]];
+    return [self formattedStatusPercent:[self displayCPUPercentForRow:row]];
 }
 
 - (NSString *)topProcessesSortMode {
@@ -842,13 +897,13 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (NSString *)topProcessesHeaderTitle {
     if ([[self topProcessesSortMode] isEqualToString:@"average"]) {
-        return @"Top Processes (60s avg system CPU)";
+        return [NSString stringWithFormat:@"Top Processes (60s avg %@)", [self topProcessesCPULabel]];
     }
-    return @"Top Processes (current system CPU)";
+    return [NSString stringWithFormat:@"Top Processes (current %@)", [self topProcessesCPULabel]];
 }
 
 - (void)addCPUSummaryForRow:(NSDictionary *)row toMenu:(NSMenu *)menu {
-    [menu addItem:[self disabledItemWithTitle:[NSString stringWithFormat:@"System CPU: %@", [self formattedStatusPercent:[self systemCPUPercentForRow:row]]]]];
+    [menu addItem:[self disabledItemWithTitle:[NSString stringWithFormat:@"%@: %@", [self cpuDisplayLabel], [self formattedStatusPercent:[self displayCPUPercentForRow:row]]]]];
 }
 
 - (NSString *)shortStatusName:(NSString *)name {
@@ -1215,11 +1270,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         }
 
         NSString *name = [self stringFromValue:row[@"name"] fallback:@"Unknown"];
-        double systemCPU = [self systemCPUPercentForRow:row];
-        item.button.title = [NSString stringWithFormat:@"%@ %@", [self shortStatusName:name], [self formattedStatusPercent:systemCPU]];
-        item.button.toolTip = [NSString stringWithFormat:@"%@ system CPU %@",
+        double displayCPU = [self displayCPUPercentForRow:row];
+        item.button.title = [NSString stringWithFormat:@"%@ %@", [self shortStatusName:name], [self formattedStatusPercent:displayCPU]];
+        item.button.toolTip = [NSString stringWithFormat:@"%@ %@ %@",
                                name,
-                               [self formattedStatusPercent:systemCPU]];
+                               [[self cpuDisplayLabel] lowercaseString],
+                               [self formattedStatusPercent:displayCPU]];
         item.menu = [self trackedStatusMenuForRow:row];
     }
 
@@ -1313,7 +1369,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 }
 
 - (void)addTrackedAppsToMenu:(NSMenu *)menu {
-    [menu addItem:[self disabledItemWithTitle:@"Tracked Processes (current system CPU)"]];
+    [menu addItem:[self disabledItemWithTitle:[NSString stringWithFormat:@"Tracked Processes (current %@)", [self topProcessesCPULabel]]]];
 
     NSArray *rows = [self trackedApps];
     if (rows.count == 0) {
@@ -1349,7 +1405,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)addAllProcessesToMenu:(NSMenu *)menu {
     NSArray *rows = [self allProcesses];
-    NSString *title = [NSString stringWithFormat:@"All Processes (%lu, current system CPU)", (unsigned long)rows.count];
+    NSString *title = [NSString stringWithFormat:@"All Processes (%lu, current %@)", (unsigned long)rows.count, [self topProcessesCPULabel]];
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
     NSMenu *submenu = [self allProcessesMenu];
     item.submenu = submenu;
@@ -1383,7 +1439,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 }
 
 - (void)addManagedAppsToMenu:(NSMenu *)menu {
-    [menu addItem:[self disabledItemWithTitle:@"Managed Apps (current system CPU)"]];
+    [menu addItem:[self disabledItemWithTitle:[NSString stringWithFormat:@"Managed Apps (current %@)", [self topProcessesCPULabel]]]];
 
     NSArray *rows = [self managedApps];
     if (rows.count == 0) {
@@ -1577,6 +1633,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     NSMenu *generalMenu = [[OpenTamerPersistentMenu alloc] initWithTitle:@"General"];
     [generalMenu addItem:[self boolPreferenceItemWithTitle:@"Show Menu Icon" key:@"showMenuBarIcon" fallback:[self showMenuBarIcon]]];
     [generalMenu addItem:[self boolPreferenceItemWithTitle:@"Aggregate By Name" key:@"aggregateByName" fallback:YES]];
+    [self addStringPreferenceWithTitle:@"CPU Display"
+                                    key:@"cpuDisplayMode"
+                               fallback:@"per_core_process"
+                                 labels:@[@"Per-Core Process CPU", @"System Normalized CPU"]
+                                 values:@[@"per_core_process", @"system_normalized"]
+                                 toMenu:generalMenu];
     [self addDurationPreferenceWithTitle:@"Wake Grace"
                                      key:@"wakeGrace"
                                 fallback:30
@@ -1781,13 +1843,14 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         BOOL systemBucket = [self rowIsSystemBucket:row];
         NSString *actionName = systemBucket ? @"process-static" : ([kind isEqualToString:@"managed"] ? @"managed" : @"process");
         [view addActionNamed:actionName frame:rowFrame row:rowObject kind:kind title:nil];
+        NSMutableDictionary *rowAction = view.actions.lastObject;
+        rowAction[@"cpuDisplayMode"] = [self cpuDisplayMode];
         if (graphColorIndexesByAppKey.count > 0) {
             NSString *appKey = OpenTamerStringFromValue(row[@"appKey"], @"");
             NSNumber *graphColorIndex = graphColorIndexesByAppKey[appKey];
             if (graphColorIndex != nil) {
-                NSMutableDictionary *action = view.actions.lastObject;
-                action[@"graphColorIndex"] = graphColorIndex;
-                action[@"graphLineHidden"] = @([self isGraphLineHiddenForAppKey:appKey]);
+                rowAction[@"graphColorIndex"] = graphColorIndex;
+                rowAction[@"graphLineHidden"] = @([self isGraphLineHiddenForAppKey:appKey]);
 
                 NSRect dotFrame = NSMakeRect(NSMinX(rowFrame) + 4, NSMinY(rowFrame) + 2, 24, 20);
                 [view addActionNamed:@"graph-toggle" frame:dotFrame row:nil kind:nil title:nil];
@@ -1858,7 +1921,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     OpenTamerCPUGraphView *graph = [[OpenTamerCPUGraphView alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, 118)];
     graph.lines = [self cpuGraphLines];
     graph.hiddenAppKeys = [self.hiddenGraphAppKeys copy];
-    graph.currentCPU = [self totalCPU];
+    graph.currentCPU = [self cpuGraphCurrentCPU];
     NSDictionary *graphState = [self cpuGraph];
     graph.windowStartUnix = OpenTamerDoubleFromRow(graphState, @"windowStartUnix", 0);
     graph.windowEndUnix = OpenTamerDoubleFromRow(graphState, @"windowEndUnix", 0);

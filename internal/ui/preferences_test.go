@@ -121,6 +121,18 @@ func TestApplyPreferencesCommandUpdatesGenericGlobalPreferences(t *testing.T) {
 	if updated.Preferences.TopProcessesSort != core.TopProcessesSortAverage {
 		t.Fatalf("top processes sort = %q, want %q", updated.Preferences.TopProcessesSort, core.TopProcessesSortAverage)
 	}
+
+	updated, err = ApplyPreferencesCommand(updated, PreferencesCommand{
+		Kind:        CommandSetStringPreference,
+		Field:       PreferenceCPUDisplayMode,
+		StringValue: core.CPUDisplayModeSystemNormalized,
+	})
+	if err != nil {
+		t.Fatalf("apply CPU display mode: %v", err)
+	}
+	if updated.Preferences.CPUDisplayMode != core.CPUDisplayModeSystemNormalized {
+		t.Fatalf("CPU display mode = %q, want %q", updated.Preferences.CPUDisplayMode, core.CPUDisplayModeSystemNormalized)
+	}
 }
 
 func TestApplyPreferencesCommandRejectsInvalidGenericPreference(t *testing.T) {
@@ -144,6 +156,13 @@ func TestApplyPreferencesCommandRejectsInvalidGenericPreference(t *testing.T) {
 		StringValue: "bogus",
 	}); err == nil {
 		t.Fatal("expected invalid top processes sort mode to fail")
+	}
+	if _, err := ApplyPreferencesCommand(cfg, PreferencesCommand{
+		Kind:        CommandSetStringPreference,
+		Field:       PreferenceCPUDisplayMode,
+		StringValue: "bogus",
+	}); err == nil {
+		t.Fatal("expected invalid CPU display mode to fail")
 	}
 }
 

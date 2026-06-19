@@ -111,5 +111,8 @@ func (controller *Controller) cpuGraphLocked(rows []ui.ProcessRow, logicalCPUCou
 	}
 	graph := ui.BuildProcessCPUGraph(samples, rows, cpuGraphProcessLimit)
 	graph = ui.WithGraphWindow(graph, now.Add(-window), now)
-	return ui.WithGraphSystemCPUPercent(graph, logicalCPUCount)
+	if core.NormalizeCPUDisplayMode(controller.cfg.Preferences.CPUDisplayMode) == core.CPUDisplayModeSystemNormalized {
+		graph = ui.WithGraphSystemCPUPercent(graph, logicalCPUCount)
+	}
+	return graph
 }
