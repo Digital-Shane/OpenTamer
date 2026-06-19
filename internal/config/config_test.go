@@ -36,6 +36,9 @@ func TestLoadConfigReturnsDefaultsWhenMissing(t *testing.T) {
 	if cfg.Preferences.TopProcessesSort != core.TopProcessesSortCurrent {
 		t.Fatalf("top processes sort = %q, want %q", cfg.Preferences.TopProcessesSort, core.TopProcessesSortCurrent)
 	}
+	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
+		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
+	}
 }
 
 func TestSaveConfigWritesAtomicallyReadableConfig(t *testing.T) {
@@ -117,6 +120,9 @@ func TestMigrateConfigFillsDefaults(t *testing.T) {
 	if cfg.Preferences.TopProcessesSort != core.TopProcessesSortCurrent {
 		t.Fatalf("top processes sort = %q, want %q", cfg.Preferences.TopProcessesSort, core.TopProcessesSortCurrent)
 	}
+	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
+		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
+	}
 }
 
 func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
@@ -162,6 +168,9 @@ func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
 	if cfg.Preferences.TopProcessesSort != core.TopProcessesSortCurrent {
 		t.Fatalf("top processes sort = %q, want %q", cfg.Preferences.TopProcessesSort, core.TopProcessesSortCurrent)
 	}
+	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
+		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
+	}
 	updated, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		t.Fatalf("read updated config: %v", err)
@@ -180,6 +189,9 @@ func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
 	}
 	if !bytes.Contains(updated, []byte(`"topProcessesSort": "current"`)) {
 		t.Fatalf("updated config missing topProcessesSort: %s", updated)
+	}
+	if !bytes.Contains(updated, []byte(`"cpuDisplayMode": "per_core_process"`)) {
+		t.Fatalf("updated config missing cpuDisplayMode: %s", updated)
 	}
 	if bytes.Contains(updated, []byte("startupGrace")) {
 		t.Fatalf("updated config should drop legacy startupGrace: %s", updated)
@@ -315,6 +327,34 @@ func TestMigrateConfigNormalizesTopProcessesSort(t *testing.T) {
 	}
 	if cfg.Preferences.TopProcessesSort != core.TopProcessesSortAverage {
 		t.Fatalf("top processes sort = %q, want %q", cfg.Preferences.TopProcessesSort, core.TopProcessesSortAverage)
+	}
+}
+
+func TestMigrateConfigNormalizesCPUDisplayMode(t *testing.T) {
+	cfg, err := MigrateConfig(Config{
+		SchemaVersion: CurrentSchemaVersion,
+		Preferences: core.GlobalPreferences{
+			CPUDisplayMode: "bogus",
+		},
+	})
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
+		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
+	}
+
+	cfg, err = MigrateConfig(Config{
+		SchemaVersion: CurrentSchemaVersion,
+		Preferences: core.GlobalPreferences{
+			CPUDisplayMode: core.CPUDisplayModeSystemNormalized,
+		},
+	})
+	if err != nil {
+		t.Fatalf("migrate system normalized: %v", err)
+	}
+	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModeSystemNormalized {
+		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModeSystemNormalized)
 	}
 }
 

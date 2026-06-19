@@ -130,6 +130,7 @@ type GlobalPreferences struct {
 	AggregateByName               bool          `json:"aggregateByName"`
 	ShowMenuBarIcon               bool          `json:"showMenuBarIcon"`
 	TopProcessesSort              string        `json:"topProcessesSort"`
+	CPUDisplayMode                string        `json:"cpuDisplayMode"`
 	StatsInterval                 time.Duration `json:"statsInterval"`
 	AveragingWindow               time.Duration `json:"averagingWindow"`
 	CPUGraphWindow                time.Duration `json:"cpuGraphWindow"`
@@ -145,6 +146,11 @@ type GlobalPreferences struct {
 const (
 	TopProcessesSortCurrent = "current"
 	TopProcessesSortAverage = "average"
+)
+
+const (
+	CPUDisplayModePerCoreProcess   = "per_core_process"
+	CPUDisplayModeSystemNormalized = "system_normalized"
 )
 
 type AppStateStore interface {
@@ -172,6 +178,15 @@ func NormalizeTopProcessesSortMode(mode string) string {
 		return TopProcessesSortAverage
 	default:
 		return TopProcessesSortCurrent
+	}
+}
+
+func NormalizeCPUDisplayMode(mode string) string {
+	switch mode {
+	case CPUDisplayModeSystemNormalized:
+		return CPUDisplayModeSystemNormalized
+	default:
+		return CPUDisplayModePerCoreProcess
 	}
 }
 

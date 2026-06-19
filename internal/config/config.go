@@ -28,6 +28,7 @@ func DefaultConfig() Config {
 			AggregateByName:         true,
 			ShowMenuBarIcon:         true,
 			TopProcessesSort:        core.TopProcessesSortCurrent,
+			CPUDisplayMode:          core.CPUDisplayModePerCoreProcess,
 			StatsInterval:           3 * time.Second,
 			AveragingWindow:         30 * time.Second,
 			CPUGraphWindow:          core.DefaultCPUGraphWindow,
@@ -59,6 +60,7 @@ func MigrateConfig(in Config) (Config, error) {
 		in.Preferences.AveragingWindow = defaults.Preferences.AveragingWindow
 	}
 	in.Preferences.TopProcessesSort = core.NormalizeTopProcessesSortMode(in.Preferences.TopProcessesSort)
+	in.Preferences.CPUDisplayMode = core.NormalizeCPUDisplayMode(in.Preferences.CPUDisplayMode)
 	in.Preferences.CPUGraphWindow = core.NormalizeCPUGraphWindow(in.Preferences.CPUGraphWindow)
 	if in.Preferences.HighCPUThreshold == 0 {
 		in.Preferences.HighCPUThreshold = defaults.Preferences.HighCPUThreshold
@@ -137,6 +139,10 @@ func (store Store) LoadConfig() (Config, error) {
 	}
 	if !configHasPreference(payload, "topProcessesSort") {
 		migrated.Preferences.TopProcessesSort = DefaultConfig().Preferences.TopProcessesSort
+		changed = true
+	}
+	if !configHasPreference(payload, "cpuDisplayMode") {
+		migrated.Preferences.CPUDisplayMode = DefaultConfig().Preferences.CPUDisplayMode
 		changed = true
 	}
 	if !configHasPreference(payload, "cpuGraphWindow") {

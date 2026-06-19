@@ -92,6 +92,7 @@ General preferences control the shape of the app:
 
 * **Show Menu Icon** - Show or hide the OpenTamer icon next to the CPU text.
 * **Aggregate By Name** - Group processes by process name instead of app bundle metadata.
+* **CPU Display** - Show app CPU as per-core process CPU by default, or as system-normalized CPU.
 * **Wake Grace** - Wait after launch or system wake before applying management rules.
 
 ### Stats & Graph
@@ -147,7 +148,7 @@ OpenTamer stores local JSON files in `~/Library/Application Support/OpenTamer`.
 
 ## Installation
 
-TODO: Download from releases
+Download the latest version from the [releases page](https://github.com/Digital-Shane/OpenTamer/releases).
 
 ## Contributing
 

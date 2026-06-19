@@ -36,6 +36,10 @@ func TestPreferenceMenuCommandsUpdateAndSaveEveryExposedSetting(t *testing.T) {
 		return "pref-bool|" + string(field) + "|" + strconv.FormatBool(value)
 	}
 
+	stringCommand := func(field ui.PreferenceField, value string) string {
+		return "pref-string|" + string(field) + "|" + value
+	}
+
 	expect := func(check checkFunc) checkFunc {
 		return func(t *testing.T, preferences core.GlobalPreferences) {
 			t.Helper()
@@ -118,6 +122,15 @@ func TestPreferenceMenuCommandsUpdateAndSaveEveryExposedSetting(t *testing.T) {
 			check: expect(func(t *testing.T, preferences core.GlobalPreferences) {
 				if preferences.CPUGraphWindow != 10*time.Minute {
 					t.Fatalf("CPU graph window = %s, want 10m", preferences.CPUGraphWindow)
+				}
+			}),
+		},
+		{
+			name:    "CPU display mode",
+			command: stringCommand(ui.PreferenceCPUDisplayMode, core.CPUDisplayModeSystemNormalized),
+			check: expect(func(t *testing.T, preferences core.GlobalPreferences) {
+				if preferences.CPUDisplayMode != core.CPUDisplayModeSystemNormalized {
+					t.Fatalf("CPU display mode = %q, want %q", preferences.CPUDisplayMode, core.CPUDisplayModeSystemNormalized)
 				}
 			}),
 		},
@@ -306,6 +319,42 @@ func TestBuildMenuBarStateIncludesLiveRows(t *testing.T) {
 	}
 	if state.Preferences.StatsInterval != controller.cfg.Preferences.StatsInterval {
 		t.Fatalf("state preferences stats interval = %s, want %s", state.Preferences.StatsInterval, controller.cfg.Preferences.StatsInterval)
+	}
+}
+
+func TestBuildMenuBarStateScalesGraphForCPUDisplayMode(t *testing.T) {
+	appID := core.AppID{Name: "Renderer"}
+	logicalCPUCount := runtime.NumCPU()
+	controller := &Controller{
+		cfg:          config.DefaultConfig(),
+		stats:        core.NewStatsDocument(),
+		lastTotalCPU: 25,
+		lastStatuses: map[string]core.AppStatus{appID.Key(): core.AppStatusObserved},
+		lastGroups: []core.AppGroup{{
+			ID:              appID,
+			Controllability: core.ControllabilityNormal,
+			Status:          core.AppStatusObserved,
+			Processes:       []core.ProcessRef{{ID: core.ProcessID{PID: 42}, Name: "Renderer"}},
+		}},
+		lastAppSamples: []core.AppCPUSample{{AppID: appID, CPUPercent: 80, SampledAt: time.Unix(1, 0)}},
+	}
+
+	perCore := controller.buildMenuBarStateLocked(time.Unix(2, 0), "")
+	if len(perCore.CPUGraph.Lines) != 1 || len(perCore.CPUGraph.Lines[0].Points) != 1 {
+		t.Fatalf("per-core graph = %#v, want one line with one point", perCore.CPUGraph)
+	}
+	if perCore.CPUGraph.Lines[0].Points[0].AppCPU != 80 {
+		t.Fatalf("per-core graph CPU = %v, want raw 80", perCore.CPUGraph.Lines[0].Points[0].AppCPU)
+	}
+
+	controller.cfg.Preferences.CPUDisplayMode = core.CPUDisplayModeSystemNormalized
+	systemNormalized := controller.buildMenuBarStateLocked(time.Unix(3, 0), "")
+	if len(systemNormalized.CPUGraph.Lines) != 1 || len(systemNormalized.CPUGraph.Lines[0].Points) != 1 {
+		t.Fatalf("system-normalized graph = %#v, want one line with one point", systemNormalized.CPUGraph)
+	}
+	want := 80 / float64(logicalCPUCount)
+	if systemNormalized.CPUGraph.Lines[0].Points[0].AppCPU != want {
+		t.Fatalf("system-normalized graph CPU = %v, want %v", systemNormalized.CPUGraph.Lines[0].Points[0].AppCPU, want)
 	}
 }
 

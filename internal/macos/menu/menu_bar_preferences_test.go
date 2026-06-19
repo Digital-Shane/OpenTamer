@@ -33,6 +33,7 @@ func TestPreferencesMenuExposesExpectedConfigKeys(t *testing.T) {
 	expected := []string{
 		"aggregateByName",
 		"averagingWindow",
+		"cpuDisplayMode",
 		"cpuGraphWindow",
 		"disableWhenACBatteryAbove",
 		"disableWhenUserIdleLongerThan",
@@ -62,6 +63,11 @@ func TestPreferencesMenuExposesExpectedConfigKeys(t *testing.T) {
 	if !strings.Contains(source, `"sort-average"`) || !strings.Contains(source, `"pref-string|topProcessesSort|average"`) {
 		t.Fatal("Avg header should select average top-process sorting")
 	}
+	if !strings.Contains(source, `key:@"cpuDisplayMode"`) ||
+		!strings.Contains(source, `@"per_core_process"`) ||
+		!strings.Contains(source, `@"system_normalized"`) {
+		t.Fatal("preferences menu should expose CPU display mode choices")
+	}
 	if strings.Contains(source, "preferencesSummary") {
 		t.Fatal("preferences menu should not expose disabled summary rows")
 	}
@@ -85,7 +91,7 @@ func TestManagementPreferencesMovedIntoGeneral(t *testing.T) {
 		t.Fatal("preferences menu should build General before Stats & Graph")
 	}
 	generalBlock := source[generalStart:statsStart]
-	for _, entry := range []string{`key:@"wakeGrace"`} {
+	for _, entry := range []string{`key:@"wakeGrace"`, `key:@"cpuDisplayMode"`} {
 		if !strings.Contains(generalBlock, entry) {
 			t.Fatalf("General preferences should include %s", entry)
 		}
@@ -205,19 +211,25 @@ func TestPreferenceOffRowsUpdateImmediatelyWithSiblingChoices(t *testing.T) {
 	}
 }
 
-func TestProcessMenusOnlyShowSystemCPU(t *testing.T) {
+func TestProcessMenusUseSelectedCPUDisplayMode(t *testing.T) {
 	payload, err := os.ReadFile("menu_bar_bridge.m")
 	if err != nil {
 		t.Fatalf("read menu bridge: %v", err)
 	}
 	source := string(payload)
 
-	if strings.Contains(source, "Process CPU") ||
-		strings.Contains(source, "process CPU") ||
-		strings.Contains(source, "processCPU") {
-		t.Fatal("process menus and tooltips should not show process CPU")
+	for _, expected := range []string{
+		"OpenTamerDisplayCPUFromRow",
+		"OpenTamerAverageDisplayCPUFromRow",
+		`@"Process CPU"`,
+		`@"System CPU"`,
+		"topProcessesCPULabel",
+	} {
+		if !strings.Contains(source, expected) {
+			t.Fatalf("process menus should use selected CPU display mode; missing %s", expected)
+		}
 	}
-	if !strings.Contains(source, "System CPU: %@") {
-		t.Fatal("process menus should still show system CPU")
+	if strings.Contains(source, "current system CPU") {
+		t.Fatal("process section headers should not hard-code system CPU")
 	}
 }

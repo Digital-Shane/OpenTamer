@@ -32,6 +32,7 @@ const (
 	PreferenceAggregateByName               PreferenceField = "aggregateByName"
 	PreferenceShowMenuBarIcon               PreferenceField = "showMenuBarIcon"
 	PreferenceTopProcessesSort              PreferenceField = "topProcessesSort"
+	PreferenceCPUDisplayMode                PreferenceField = "cpuDisplayMode"
 	PreferenceStatsInterval                 PreferenceField = "statsInterval"
 	PreferenceAveragingWindow               PreferenceField = "averagingWindow"
 	PreferenceCPUGraphWindow                PreferenceField = "cpuGraphWindow"
@@ -185,6 +186,12 @@ func setStringPreference(preferences *core.GlobalPreferences, field PreferenceFi
 			return fmt.Errorf("unsupported top processes sort mode %q", value)
 		}
 		preferences.TopProcessesSort = normalized
+	case PreferenceCPUDisplayMode:
+		normalized := core.NormalizeCPUDisplayMode(value)
+		if normalized != value {
+			return fmt.Errorf("unsupported CPU display mode %q", value)
+		}
+		preferences.CPUDisplayMode = normalized
 	default:
 		return fmt.Errorf("unsupported string preference %q", field)
 	}
