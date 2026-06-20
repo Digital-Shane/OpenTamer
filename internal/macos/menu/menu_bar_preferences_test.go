@@ -91,13 +91,33 @@ func TestManagementPreferencesMovedIntoGeneral(t *testing.T) {
 		t.Fatal("preferences menu should build General before Stats & Graph")
 	}
 	generalBlock := source[generalStart:statsStart]
-	for _, entry := range []string{`key:@"wakeGrace"`, `key:@"cpuDisplayMode"`} {
+	for _, entry := range []string{`launchAtLoginItem`, `key:@"wakeGrace"`, `key:@"cpuDisplayMode"`} {
 		if !strings.Contains(generalBlock, entry) {
 			t.Fatalf("General preferences should include %s", entry)
 		}
 	}
 	if strings.Contains(generalBlock, `key:@"startupGrace"`) {
 		t.Fatal("General preferences should expose one wake grace control, not legacy startupGrace")
+	}
+}
+
+func TestLaunchAtLoginPreferenceUsesServiceManagement(t *testing.T) {
+	payload, err := os.ReadFile("menu_bar_bridge.m")
+	if err != nil {
+		t.Fatalf("read menu bridge: %v", err)
+	}
+	source := string(payload)
+
+	for _, entry := range []string{
+		`#import <ServiceManagement/ServiceManagement.h>`,
+		`SMAppService.mainAppService`,
+		`registerAndReturnError`,
+		`unregisterAndReturnError`,
+		`Launch at Login`,
+	} {
+		if !strings.Contains(source, entry) {
+			t.Fatalf("launch-at-login preference should include %s", entry)
+		}
 	}
 }
 

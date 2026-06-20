@@ -13,9 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v1.2.0] - 2026-06-20
+### Added
+- Ability to launch OpenTamer on login.
+
+
 ## [v1.1.0] - 2026-06-19
 ### Added
 - Preference to swap between per-process and system normalized CPU usage display.
+
 
 ## [v1.0.0] - 2026-06-19
 ### Released

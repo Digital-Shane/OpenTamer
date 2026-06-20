@@ -3,7 +3,7 @@
 package menu
 
 /*
-#cgo darwin LDFLAGS: -framework Cocoa
+#cgo darwin LDFLAGS: -framework Cocoa -framework ServiceManagement
 #include <stdlib.h>
 #include "menu_bar_bridge.h"
 */
