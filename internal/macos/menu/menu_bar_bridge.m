@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <ServiceManagement/ServiceManagement.h>
 #import <math.h>
 #import <stdlib.h>
 #import <string.h>
@@ -1471,6 +1472,29 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     return item;
 }
 
+- (NSMenuItem *)launchAtLoginItem {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"Launch at Login"
+                                                  action:@selector(toggleLaunchAtLogin:)
+                                           keyEquivalent:@""];
+    item.target = self;
+    item.enabled = YES;
+
+    if (@available(macOS 13.0, *)) {
+        SMAppServiceStatus status = SMAppService.mainAppService.status;
+        if (status == SMAppServiceStatusEnabled) {
+            item.state = NSControlStateValueOn;
+        } else if (status == SMAppServiceStatusRequiresApproval) {
+            item.state = NSControlStateValueMixed;
+            item.toolTip = @"Approve OpenTamer in System Settings to launch it at login.";
+        } else {
+            item.state = NSControlStateValueOff;
+        }
+    } else {
+        item.enabled = NO;
+    }
+    return item;
+}
+
 - (long long)nanosecondsForSeconds:(double)seconds {
     return (long long)llround(seconds * 1000000000.0);
 }
@@ -1631,6 +1655,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
     NSMenuItem *general = [[NSMenuItem alloc] initWithTitle:@"General" action:nil keyEquivalent:@""];
     NSMenu *generalMenu = [[OpenTamerPersistentMenu alloc] initWithTitle:@"General"];
+    [generalMenu addItem:[self launchAtLoginItem]];
     [generalMenu addItem:[self boolPreferenceItemWithTitle:@"Show Menu Icon" key:@"showMenuBarIcon" fallback:[self showMenuBarIcon]]];
     [generalMenu addItem:[self boolPreferenceItemWithTitle:@"Aggregate By Name" key:@"aggregateByName" fallback:YES]];
     [self addStringPreferenceWithTitle:@"CPU Display"
@@ -2206,6 +2231,40 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
     NSString *command = [NSString stringWithFormat:@"pref-float|highCPUThreshold|%.6g", value];
     opentamer_menu_command(command.UTF8String);
+}
+
+- (void)toggleLaunchAtLogin:(id)sender {
+    if (!@available(macOS 13.0, *)) {
+        return;
+    }
+
+    SMAppService *service = SMAppService.mainAppService;
+    NSError *error = nil;
+    SMAppServiceStatus currentStatus = service.status;
+    BOOL registered = currentStatus == SMAppServiceStatusEnabled ||
+        currentStatus == SMAppServiceStatusRequiresApproval;
+    BOOL updated = registered
+        ? [service unregisterAndReturnError:&error]
+        : [service registerAndReturnError:&error];
+    if (!updated) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Login item not updated";
+        alert.informativeText = error.localizedDescription ?: @"OpenTamer could not update its Login Items setting.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return;
+    }
+
+    if ([sender isKindOfClass:NSMenuItem.class]) {
+        NSMenuItem *item = (NSMenuItem *)sender;
+        SMAppServiceStatus status = service.status;
+        item.state = status == SMAppServiceStatusEnabled
+            ? NSControlStateValueOn
+            : status == SMAppServiceStatusRequiresApproval ? NSControlStateValueMixed : NSControlStateValueOff;
+        item.toolTip = status == SMAppServiceStatusRequiresApproval
+            ? @"Approve OpenTamer in System Settings to launch it at login."
+            : nil;
+    }
 }
 
 - (void)quit:(id)sender {

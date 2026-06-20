@@ -90,6 +90,7 @@ OpenTamer's preferences are available from the `...` button in the main panel.
 
 General preferences control the shape of the app:
 
+* **Launch at Login** - Start OpenTamer automatically when you log in.
 * **Show Menu Icon** - Show or hide the OpenTamer icon next to the CPU text.
 * **Aggregate By Name** - Group processes by process name instead of app bundle metadata.
 * **CPU Display** - Show app CPU as per-core process CPU by default, or as system-normalized CPU.
