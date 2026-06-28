@@ -1,8 +1,9 @@
 package core
 
-import "slices"
-
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 type RuleMode string
 type RuleTrackingLocation string
@@ -141,6 +142,7 @@ type GlobalPreferences struct {
 	HighCPUThreshold              float64       `json:"highCPUThreshold"`
 	HighCPUDuration               time.Duration `json:"highCPUDuration"`
 	HighCPUCooldown               time.Duration `json:"highCPUCooldown"`
+	Theme                         string        `json:"theme"`
 }
 
 const (
@@ -192,4 +194,13 @@ func NormalizeCPUDisplayMode(mode string) string {
 
 type Clock interface {
 	Now() time.Time
+}
+
+func NormalizeThemeMode(mode string) string {
+	switch mode {
+	case "light", "dark":
+		return mode
+	default:
+		return "system"
+	}
 }

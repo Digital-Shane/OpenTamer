@@ -43,6 +43,7 @@ func TestPreferencesMenuExposesExpectedConfigKeys(t *testing.T) {
 		"highCPUThreshold",
 		"showMenuBarIcon",
 		"statsInterval",
+		"theme",
 		"topProcessesSort",
 		"wakeGrace",
 	}

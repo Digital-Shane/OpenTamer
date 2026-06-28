@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <QuartzCore/QuartzCore.h>
 #import <math.h>
 #import <stdlib.h>
 #import <string.h>
@@ -112,6 +113,9 @@ extern void opentamer_menu_command(const char *command);
 @end
 
 static BOOL OpenTamerCommandShouldKeepMenuOpen(NSString *command) {
+    if ([command hasPrefix:@"pref-string|theme|"]) {
+        return NO;
+    }
     return [command hasPrefix:@"pref-"] ||
         [command hasPrefix:@"graph-window|"];
 }
@@ -236,7 +240,6 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     if (self == nil) {
         return nil;
     }
-    self.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     self.actions = [[NSMutableArray alloc] init];
     return self;
 }
@@ -262,7 +265,11 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    [[NSColor colorWithCalibratedWhite:0.985 alpha:1.0] setFill];
+    if ([self.effectiveAppearance.name containsString:@"Dark"]) {
+        [[NSColor colorWithCalibratedWhite:0.12 alpha:1.0] setFill];
+    } else {
+        [[NSColor colorWithCalibratedWhite:0.985 alpha:1.0] setFill];
+    }
     NSRectFill(self.bounds);
 
     for (NSDictionary *action in self.actions) {
@@ -383,7 +390,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 - (void)drawButtonAction:(NSDictionary *)action {
     NSRect bounds = [action[@"frame"] rectValue];
     NSString *title = [action[@"title"] isKindOfClass:NSString.class] ? action[@"title"] : @"";
-    [[NSColor colorWithCalibratedWhite:0.92 alpha:1.0] setFill];
+    
+    if ([self.effectiveAppearance.name containsString:@"Dark"]) {
+        [[NSColor colorWithCalibratedWhite:0.22 alpha:1.0] setFill];
+    } else {
+        [[NSColor colorWithCalibratedWhite:0.92 alpha:1.0] setFill];
+    }
     [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:6 yRadius:6] fill];
 
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
@@ -400,7 +412,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)drawProcessAction:(NSDictionary *)action {
     NSRect bounds = NSInsetRect([action[@"frame"] rectValue], 2, 2);
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:0.72] setFill];
+    
+    if ([self.effectiveAppearance.name containsString:@"Dark"]) {
+        [[NSColor colorWithCalibratedWhite:0.18 alpha:0.72] setFill];
+    } else {
+        [[NSColor colorWithCalibratedWhite:1.0 alpha:0.72] setFill];
+    }
     [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:6 yRadius:6] fill];
 
     NSDictionary *row = [action[@"row"] isKindOfClass:NSDictionary.class] ? action[@"row"] : @{};
@@ -435,11 +452,11 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     };
 
     CGFloat valueWidth = [kind isEqualToString:@"managed"] ? 162 : 116;
-    NSRect valueRect = NSMakeRect(NSMaxX(bounds) - valueWidth - 8, NSMinY(bounds) + 6, valueWidth, 16);
+    NSRect valueRect = NSMakeRect(NSMaxX(bounds) - valueWidth - 8, NSMinY(bounds) + 2, valueWidth, 16);
     CGFloat nameX = NSMinX(bounds) + 8;
     id graphColorIndex = action[@"graphColorIndex"];
     if (graphColorIndex != nil && graphColorIndex != [NSNull null] && [graphColorIndex respondsToSelector:@selector(unsignedIntegerValue)]) {
-        NSRect dotRect = NSMakeRect(nameX, NSMinY(bounds) + 8, 8, 8);
+        NSRect dotRect = NSMakeRect(nameX, NSMinY(bounds) + 6, 8, 8);
         NSColor *dotColor = OpenTamerGraphColor([graphColorIndex unsignedIntegerValue]);
         NSBezierPath *dotPath = [NSBezierPath bezierPathWithOvalInRect:dotRect];
         BOOL graphLineHidden = [action[@"graphLineHidden"] boolValue];
@@ -461,7 +478,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         }
         nameX += 16;
     }
-    NSRect nameRect = NSMakeRect(nameX, NSMinY(bounds) + 6, MAX((CGFloat)0, NSMinX(valueRect) - nameX - 2), 16);
+    NSRect nameRect = NSMakeRect(nameX, NSMinY(bounds) + 2, MAX((CGFloat)0, NSMinX(valueRect) - nameX - 2), 16);
     [name drawInRect:nameRect withAttributes:nameAttrs];
     [right drawInRect:valueRect withAttributes:valueAttrs];
 }
@@ -574,7 +591,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = NSInsetRect(self.bounds, 1, 1);
-    [[NSColor colorWithCalibratedWhite:1.0 alpha:1.0] setFill];
+    
+    if ([self.effectiveAppearance.name containsString:@"Dark"]) {
+        [[NSColor colorWithCalibratedWhite:0.15 alpha:1.0] setFill];
+    } else {
+        [[NSColor colorWithCalibratedWhite:1.0 alpha:1.0] setFill];
+    }
     [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:8 yRadius:8] fill];
 
     NSRect plot = NSMakeRect(NSMinX(bounds) + 12, NSMinY(bounds) + 14, NSWidth(bounds) - 58, NSHeight(bounds) - 28);
@@ -675,6 +697,19 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 - (void)install {
     self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.menu = nil;
+
+    // 💡 Apply user configuration choices directly to the application context on startup boots
+    if (@available(macOS 10.14, *)) {
+        NSAppearance *appAppearance = nil;
+        NSString *theme = [self stringPreference:@"theme" fallback:@"system"];
+        if ([theme isEqualToString:@"dark"]) {
+            appAppearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        } else if ([theme isEqualToString:@"light"]) {
+            appAppearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        }
+        NSApp.appearance = appAppearance;
+    }
+
     [self updateStatusTitle];
     [self updateTrackedStatusItems];
     [self rebuildMenu];
@@ -683,12 +718,30 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 - (void)updateWithState:(NSDictionary *)state {
     self.state = state ?: @{};
     [self pruneHiddenGraphAppKeys];
+
+    if (@available(macOS 10.14, *)) {
+        NSAppearance *appAppearance = nil;
+        NSString *theme = [self stringPreference:@"theme" fallback:@"system"];
+        if ([theme isEqualToString:@"dark"]) {
+            appAppearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        } else if ([theme isEqualToString:@"light"]) {
+            appAppearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        }
+        NSApp.appearance = appAppearance;
+    }
+
     [self updateStatusTitle];
     [self updateTrackedStatusItems];
+    
     if (self.primaryPopover.isShown) {
+        self.primaryPopover.appearance = NSApp.appearance;
+        if (self.primaryPopover.contentViewController.view.window) {
+            self.primaryPopover.contentViewController.view.window.appearance = NSApp.appearance;
+        }
         [self refreshPrimaryPopoverContent];
         return;
     }
+    
     if (self.menuVisible) {
         self.needsMenuRebuild = YES;
     } else {
@@ -1664,6 +1717,12 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
                                  labels:@[@"Per-Core Process CPU", @"System Normalized CPU"]
                                  values:@[@"per_core_process", @"system_normalized"]
                                  toMenu:generalMenu];
+    [self addStringPreferenceWithTitle:@"Theme"
+                                    key:@"theme"
+                               fallback:@"system"
+                                 labels:@[@"System theme", @"Light", @"Dark"]
+                                 values:@[@"system", @"light", @"dark"]
+                                 toMenu:generalMenu];                                 
     [self addDurationPreferenceWithTitle:@"Wake Grace"
                                      key:@"wakeGrace"
                                 fallback:30
@@ -1909,6 +1968,8 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
     OpenTamerPanelView *view = [[OpenTamerPanelView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     view.controller = (id<OpenTamerPanelActionHandling>)self;
+    view.appearance = NSApp.appearance;
+
     CGFloat y = 12;
     NSDictionary *graphColorIndexesByAppKey = [self graphColorIndexesByAppKey];
 
@@ -1944,6 +2005,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     y += 18;
 
     OpenTamerCPUGraphView *graph = [[OpenTamerCPUGraphView alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, 118)];
+    graph.appearance = NSApp.appearance;
     graph.lines = [self cpuGraphLines];
     graph.hiddenAppKeys = [self.hiddenGraphAppKeys copy];
     graph.currentCPU = [self cpuGraphCurrentCPU];
@@ -2009,7 +2071,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     popover.behavior = NSPopoverBehaviorTransient;
     popover.animates = NO;
     popover.delegate = self;
-    popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    popover.appearance = NSApp.appearance;
 
     NSViewController *viewController = [[NSViewController alloc] init];
     viewController.view = [self primaryPanelView];

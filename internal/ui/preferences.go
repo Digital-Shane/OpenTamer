@@ -43,6 +43,7 @@ const (
 	PreferenceHighCPUThreshold              PreferenceField = "highCPUThreshold"
 	PreferenceHighCPUDuration               PreferenceField = "highCPUDuration"
 	PreferenceHighCPUCooldown               PreferenceField = "highCPUCooldown"
+	PreferenceTheme                         PreferenceField = "theme"
 )
 
 type PreferencesCommand struct {
@@ -192,6 +193,12 @@ func setStringPreference(preferences *core.GlobalPreferences, field PreferenceFi
 			return fmt.Errorf("unsupported CPU display mode %q", value)
 		}
 		preferences.CPUDisplayMode = normalized
+	case PreferenceTheme: // 👈 Add this entire block!
+		normalized := core.NormalizeThemeMode(value)
+		if normalized != value {
+			return fmt.Errorf("unsupported theme mode %q", value)
+		}
+		preferences.Theme = normalized
 	default:
 		return fmt.Errorf("unsupported string preference %q", field)
 	}
