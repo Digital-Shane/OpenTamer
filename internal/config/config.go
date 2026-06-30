@@ -37,6 +37,7 @@ func DefaultConfig() Config {
 			HighCPUThreshold:        75,
 			HighCPUDuration:         30 * time.Second,
 			HighCPUCooldown:         10 * time.Minute,
+			Theme:                   "system",
 		},
 		Rules: make([]core.AppRule, 0),
 	}
@@ -62,6 +63,9 @@ func MigrateConfig(in Config) (Config, error) {
 	in.Preferences.TopProcessesSort = core.NormalizeTopProcessesSortMode(in.Preferences.TopProcessesSort)
 	in.Preferences.CPUDisplayMode = core.NormalizeCPUDisplayMode(in.Preferences.CPUDisplayMode)
 	in.Preferences.CPUGraphWindow = core.NormalizeCPUGraphWindow(in.Preferences.CPUGraphWindow)
+
+	in.Preferences.Theme = core.NormalizeThemeMode(in.Preferences.Theme)
+
 	if in.Preferences.HighCPUThreshold == 0 {
 		in.Preferences.HighCPUThreshold = defaults.Preferences.HighCPUThreshold
 	}
@@ -149,6 +153,12 @@ func (store Store) LoadConfig() (Config, error) {
 		migrated.Preferences.CPUGraphWindow = DefaultConfig().Preferences.CPUGraphWindow
 		changed = true
 	}
+
+	if !configHasPreference(payload, "theme") {
+		migrated.Preferences.Theme = DefaultConfig().Preferences.Theme
+		changed = true
+	}
+
 	if !configHasPreference(payload, "wakeGrace") {
 		migrated.Preferences.WakeGrace = DefaultConfig().Preferences.WakeGrace
 		if hasLegacyStartupGrace {

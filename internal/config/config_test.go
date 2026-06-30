@@ -39,6 +39,9 @@ func TestLoadConfigReturnsDefaultsWhenMissing(t *testing.T) {
 	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
 		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
 	}
+	if cfg.Preferences.Theme != "system" {
+		t.Fatalf("theme = %q, want %q", cfg.Preferences.Theme, "system")
+	}
 }
 
 func TestSaveConfigWritesAtomicallyReadableConfig(t *testing.T) {
@@ -148,7 +151,6 @@ func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), payload, 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-
 	cfg, err := store.LoadConfig()
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -171,6 +173,9 @@ func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
 	if cfg.Preferences.CPUDisplayMode != core.CPUDisplayModePerCoreProcess {
 		t.Fatalf("CPU display mode = %q, want %q", cfg.Preferences.CPUDisplayMode, core.CPUDisplayModePerCoreProcess)
 	}
+	if cfg.Preferences.Theme != "system" {
+		t.Fatal("theme should be backfilled to system")
+	}
 	updated, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		t.Fatalf("read updated config: %v", err)
@@ -192,6 +197,9 @@ func TestLoadConfigBackfillsMissingPreferences(t *testing.T) {
 	}
 	if !bytes.Contains(updated, []byte(`"cpuDisplayMode": "per_core_process"`)) {
 		t.Fatalf("updated config missing cpuDisplayMode: %s", updated)
+	}
+	if !bytes.Contains(updated, []byte(`"theme": "system"`)) {
+		t.Fatalf("updated config missing theme: %s", updated)
 	}
 	if bytes.Contains(updated, []byte("startupGrace")) {
 		t.Fatalf("updated config should drop legacy startupGrace: %s", updated)

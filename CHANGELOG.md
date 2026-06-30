@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v1.3.0] - 2026-06-30
+### Added
+- Persisted theme preference with default/backfill behavior (Thanks @kerem0x !)
+### Updated
+- git ignore to exclude built opentamer binaries.
+
 ## [v1.2.0] - 2026-06-20
 ### Added
 - Ability to launch OpenTamer on login.
