@@ -390,7 +390,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 - (void)drawButtonAction:(NSDictionary *)action {
     NSRect bounds = [action[@"frame"] rectValue];
     NSString *title = [action[@"title"] isKindOfClass:NSString.class] ? action[@"title"] : @"";
-    
+
     if ([self.effectiveAppearance.name containsString:@"Dark"]) {
         [[NSColor colorWithCalibratedWhite:0.22 alpha:1.0] setFill];
     } else {
@@ -412,7 +412,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)drawProcessAction:(NSDictionary *)action {
     NSRect bounds = NSInsetRect([action[@"frame"] rectValue], 2, 2);
-    
+
     if ([self.effectiveAppearance.name containsString:@"Dark"]) {
         [[NSColor colorWithCalibratedWhite:0.18 alpha:0.72] setFill];
     } else {
@@ -591,7 +591,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)drawRect:(NSRect)dirtyRect {
     NSRect bounds = NSInsetRect(self.bounds, 1, 1);
-    
+
     if ([self.effectiveAppearance.name containsString:@"Dark"]) {
         [[NSColor colorWithCalibratedWhite:0.15 alpha:1.0] setFill];
     } else {
@@ -698,7 +698,6 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     self.statusItem = [NSStatusBar.systemStatusBar statusItemWithLength:NSVariableStatusItemLength];
     self.statusItem.menu = nil;
 
-    // 💡 Apply user configuration choices directly to the application context on startup boots
     if (@available(macOS 10.14, *)) {
         NSAppearance *appAppearance = nil;
         NSString *theme = [self stringPreference:@"theme" fallback:@"system"];
@@ -732,7 +731,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
     [self updateStatusTitle];
     [self updateTrackedStatusItems];
-    
+
     if (self.primaryPopover.isShown) {
         self.primaryPopover.appearance = NSApp.appearance;
         if (self.primaryPopover.contentViewController.view.window) {
@@ -741,7 +740,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         [self refreshPrimaryPopoverContent];
         return;
     }
-    
+
     if (self.menuVisible) {
         self.needsMenuRebuild = YES;
     } else {
@@ -1722,7 +1721,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
                                fallback:@"system"
                                  labels:@[@"System theme", @"Light", @"Dark"]
                                  values:@[@"system", @"light", @"dark"]
-                                 toMenu:generalMenu];                                 
+                                 toMenu:generalMenu];
     [self addDurationPreferenceWithTitle:@"Wake Grace"
                                      key:@"wakeGrace"
                                 fallback:30

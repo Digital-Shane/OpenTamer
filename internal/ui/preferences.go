@@ -193,7 +193,7 @@ func setStringPreference(preferences *core.GlobalPreferences, field PreferenceFi
 			return fmt.Errorf("unsupported CPU display mode %q", value)
 		}
 		preferences.CPUDisplayMode = normalized
-	case PreferenceTheme: // 👈 Add this entire block!
+	case PreferenceTheme:
 		normalized := core.NormalizeThemeMode(value)
 		if normalized != value {
 			return fmt.Errorf("unsupported theme mode %q", value)
