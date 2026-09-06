@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/core"
@@ -72,11 +74,12 @@ func (scheduler *Scheduler) Evaluate(input SchedulerInput) SchedulerResult {
 		appRuntime.LastEvaluatedAt = now
 
 		rule, ok := matchingRule(group.ID, rules)
-		foreground := !group.ID.IsEmpty() && group.ID.Matches(input.Frontmost)
+		foreground := groupIsForeground(group, input.Frontmost)
 		if foreground {
 			appRuntime.BackgroundSince = time.Time{}
 			if !ok || !ruleAppliesInForeground(rule) {
 				result.Actions = append(result.Actions, scheduler.restoreForegroundActions(group, runtime, now, true)...)
+				clearCPULimitRuntime(&appRuntime)
 				appRuntime.Status = statusForForeground(group, runtime)
 				runtime.AppStates[key] = appRuntime
 				result.Statuses[key] = appRuntime.Status
@@ -356,11 +359,36 @@ func matchingRule(app core.AppID, rules []core.AppRule) (core.AppRule, bool) {
 	return core.AppRule{}, false
 }
 
+func groupIsForeground(group core.AppGroup, frontmost core.AppID) bool {
+	if frontmost.IsEmpty() {
+		return false
+	}
+	if group.ID.Matches(frontmost) {
+		return true
+	}
+	if group.ID.BundleID != "" || group.ID.Path != "" {
+		return false
+	}
+	// Name aggregation drops app metadata from the group ID. Match its member
+	// processes to the frontmost app, including helpers inside its bundle.
+	for _, process := range group.Processes {
+		if process.BundleID != "" && frontmost.BundleID != "" && strings.EqualFold(process.BundleID, frontmost.BundleID) {
+			return true
+		}
+		if process.ExecutablePath != "" && frontmost.Path != "" {
+			path := filepath.Clean(process.ExecutablePath)
+			bundlePath := filepath.Clean(frontmost.Path)
+			if path == bundlePath || strings.HasPrefix(path, bundlePath+string(filepath.Separator)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func ruleAppliesInForeground(rule core.AppRule) bool {
 	switch rule.Mode {
-	case core.RuleModeLimitCPUInBackground:
-		return true
-	case core.RuleModeLowerPriorityInBackground:
+	case core.RuleModeLowerPriorityInBackground, core.RuleModeLimitCPUInBackground:
 		return !rule.BackgroundOnly
 	default:
 		return false

@@ -72,6 +72,12 @@ OpenTamer briefly pauses and resumes the process to keep the average closer to t
 aggressive than lowering priority, but less disruptive than quitting the app. This is useful for apps that ignore
 normal priority pressure and keep consuming CPU anyway.
 
+Choose a mode under `Limit CPU...`, then select a preset percentage or `Custom...`:
+
+* `In Background` - Limit CPU only while the app is not frontmost. OpenTamer releases the limit when you return to the app
+  and re-applies it as needed when the app returns to the background. Changes are detected on the next stats refresh.
+* `Always` - Keep the CPU limit even when the app is frontmost. Existing CPU limits keep this behavior.
+
 ### Pause in Background
 
 Pause in Background stops an app when it is no longer frontmost and resumes it when you return to it. OpenTamer

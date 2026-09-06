@@ -243,13 +243,18 @@ func TestRefreshSensorGatesMatchRuleNeeds(t *testing.T) {
 	observe := core.AppRule{Mode: core.RuleModeObserveOnly}
 	priorityAlways := core.AppRule{Mode: core.RuleModeLowerPriorityInBackground, BackgroundOnly: false}
 	priorityBackground := core.AppRule{Mode: core.RuleModeLowerPriorityInBackground, BackgroundOnly: true}
+	limitAlways := core.AppRule{Mode: core.RuleModeLimitCPUInBackground, BackgroundOnly: false}
+	limitBackground := core.AppRule{Mode: core.RuleModeLimitCPUInBackground, BackgroundOnly: true}
 	pause := core.AppRule{Mode: core.RuleModePauseInBackground}
 
-	if needsFrontmostApp([]core.AppRule{observe, priorityAlways}) {
-		t.Fatal("observe-only and always-priority rules should not require frontmost app sampling")
+	if needsFrontmostApp([]core.AppRule{observe, priorityAlways, limitAlways}) {
+		t.Fatal("observe-only and always rules should not require frontmost app sampling")
 	}
 	if !needsFrontmostApp([]core.AppRule{priorityBackground}) {
 		t.Fatal("background-priority rules should require frontmost app sampling")
+	}
+	if !needsFrontmostApp([]core.AppRule{limitBackground}) {
+		t.Fatal("background CPU limits should require frontmost app sampling")
 	}
 	if !needsFrontmostApp([]core.AppRule{pause}) {
 		t.Fatal("pause-in-background rules should require frontmost app sampling")
@@ -1010,25 +1015,35 @@ func TestHandleRuleCommandCreatesCPULimitRule(t *testing.T) {
 			Processes:       []core.ProcessRef{{ID: core.ProcessID{PID: 42}, Name: "Worker"}},
 		}},
 	}
-	controller.cfg.Preferences.CPULimiterEnabled = false
+	controller.handleRuleCommandLocked([]string{"rule", "track-menu-bar", appID.Key()})
+	for _, mode := range []string{"limit", "limit-background", "limit-always"} {
+		t.Run(mode, func(t *testing.T) {
+			controller.cfg.Preferences.CPULimiterEnabled = false
+			controller.handleRuleCommandLocked([]string{"rule", mode, "0.01", appID.Key()})
 
-	controller.handleRuleCommandLocked([]string{"rule", "limit", "0.01", appID.Key()})
-
-	if len(controller.cfg.Rules) != 1 {
-		t.Fatalf("rules = %d, want 1", len(controller.cfg.Rules))
-	}
-	rule := controller.cfg.Rules[0]
-	if rule.Mode != core.RuleModeLimitCPUInBackground {
-		t.Fatalf("mode = %q, want CPU limit", rule.Mode)
-	}
-	if rule.BackgroundOnly {
-		t.Fatal("CPU limit rules from the menu should apply while foreground")
-	}
-	if rule.CPUPercent == nil || *rule.CPUPercent != apppolicy.MinCPULimitPercent {
-		t.Fatalf("cpu percent = %#v, want %.2f", rule.CPUPercent, apppolicy.MinCPULimitPercent)
-	}
-	if !controller.cfg.Preferences.CPULimiterEnabled {
-		t.Fatal("CPU limiter should be enabled after creating a limit rule")
+			loaded, err := controller.store.LoadConfig()
+			if err != nil {
+				t.Fatalf("load saved CPU limit: %v", err)
+			}
+			for _, cfg := range []config.Config{controller.cfg, loaded} {
+				if len(cfg.Rules) != 1 {
+					t.Fatalf("rules = %d, want 1", len(cfg.Rules))
+				}
+				rule := cfg.Rules[0]
+				if rule.Mode != core.RuleModeLimitCPUInBackground || rule.BackgroundOnly != (mode == "limit-background") {
+					t.Fatalf("CPU limit rule = %#v, want scope %s", rule, mode)
+				}
+				if rule.CPUPercent == nil || *rule.CPUPercent != apppolicy.MinCPULimitPercent {
+					t.Fatalf("cpu percent = %#v, want %.2f", rule.CPUPercent, apppolicy.MinCPULimitPercent)
+				}
+				if !rule.TracksIn(core.RuleTrackInMenuBar) || rule.TracksIn(core.RuleTrackInManagedApps) {
+					t.Fatalf("tracking changed: %#v", rule.TrackIn)
+				}
+				if !cfg.Preferences.CPULimiterEnabled {
+					t.Fatal("CPU limiter should be enabled after creating a limit rule")
+				}
+			}
+		})
 	}
 }
 
@@ -1217,6 +1232,8 @@ func TestHandleRuleCommandRejectsBlockedManagementRules(t *testing.T) {
 		{"rule", "pause", appID.Key()},
 		{"rule", "priority-background", appID.Key()},
 		{"rule", "limit", "1", appID.Key()},
+		{"rule", "limit-background", "1", appID.Key()},
+		{"rule", "limit-always", "1", appID.Key()},
 	} {
 		controller := &Controller{
 			store: config.NewStore(t.TempDir()),

@@ -1210,26 +1210,35 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
                                                   action:nil
                                            keyEquivalent:@""];
     NSMenu *submenu = [[OpenTamerPersistentMenu alloc] initWithTitle:@"Limit CPU"];
-    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"25%" value:@"25" appKey:appKey]];
-    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"10%" value:@"10" appKey:appKey]];
-    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"5%" value:@"5" appKey:appKey]];
-    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"1%" value:@"1" appKey:appKey]];
-    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"0.01%" value:@"0.01" appKey:appKey]];
+    [submenu addItem:[self cpuLimitScopeItemWithTitle:@"In Background" mode:@"limit-background" appKey:appKey]];
+    [submenu addItem:[self cpuLimitScopeItemWithTitle:@"Always" mode:@"limit-always" appKey:appKey]];
+    item.submenu = submenu;
+    return item;
+}
+
+- (NSMenuItem *)cpuLimitScopeItemWithTitle:(NSString *)title mode:(NSString *)mode appKey:(NSString *)appKey {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
+    NSMenu *submenu = [[OpenTamerPersistentMenu alloc] initWithTitle:title];
+    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"25%" value:@"25" mode:mode appKey:appKey]];
+    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"10%" value:@"10" mode:mode appKey:appKey]];
+    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"5%" value:@"5" mode:mode appKey:appKey]];
+    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"1%" value:@"1" mode:mode appKey:appKey]];
+    [submenu addItem:[self cpuLimitPresetItemWithTitle:@"0.01%" value:@"0.01" mode:mode appKey:appKey]];
     [submenu addItem:NSMenuItem.separatorItem];
 
     NSMenuItem *custom = [[NSMenuItem alloc] initWithTitle:@"Custom..."
                                                     action:@selector(promptForCPULimit:)
                                              keyEquivalent:@""];
     custom.target = self;
-    custom.representedObject = appKey;
+    custom.representedObject = @{@"appKey": appKey, @"mode": mode};
     [submenu addItem:custom];
 
     item.submenu = submenu;
     return item;
 }
 
-- (NSMenuItem *)cpuLimitPresetItemWithTitle:(NSString *)title value:(NSString *)value appKey:(NSString *)appKey {
-    return [self commandItemWithTitle:title command:[NSString stringWithFormat:@"rule|limit|%@|%@", value, appKey]];
+- (NSMenuItem *)cpuLimitPresetItemWithTitle:(NSString *)title value:(NSString *)value mode:(NSString *)mode appKey:(NSString *)appKey {
+    return [self commandItemWithTitle:title command:[NSString stringWithFormat:@"rule|%@|%@|%@", mode, value, appKey]];
 }
 
 - (NSMenuItem *)priorityMenuItemWithAppKey:(NSString *)appKey enabled:(BOOL)enabled {
@@ -2223,8 +2232,10 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
 
 - (void)promptForCPULimit:(id)sender {
     NSMenuItem *item = sender;
-    NSString *appKey = [item.representedObject isKindOfClass:NSString.class] ? item.representedObject : @"";
-    if (appKey.length == 0) {
+    NSDictionary *context = [item.representedObject isKindOfClass:NSDictionary.class] ? item.representedObject : @{};
+    NSString *appKey = [self stringFromValue:context[@"appKey"] fallback:@""];
+    NSString *mode = [self stringFromValue:context[@"mode"] fallback:@""];
+    if (appKey.length == 0 || (![mode isEqualToString:@"limit-background"] && ![mode isEqualToString:@"limit-always"])) {
         return;
     }
 
@@ -2235,7 +2246,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     field.placeholderString = @"0.01";
 
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = @"Limit CPU";
+    alert.messageText = [mode isEqualToString:@"limit-background"] ? @"Limit CPU in Background" : @"Limit CPU Always";
     alert.informativeText = @"Enter a maximum CPU percentage. Minimum is 0.01%.";
     alert.accessoryView = field;
     [alert addButtonWithTitle:@"Apply"];
@@ -2256,7 +2267,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         return;
     }
 
-    NSString *command = [NSString stringWithFormat:@"rule|limit|%.6g|%@", value, appKey];
+    NSString *command = [NSString stringWithFormat:@"rule|%@|%.6g|%@", mode, value, appKey];
     opentamer_menu_command(command.UTF8String);
 }
 

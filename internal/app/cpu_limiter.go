@@ -28,6 +28,7 @@ type cpuLimitEntry struct {
 	request CPULimitRequest
 	cancel  context.CancelFunc
 	updated chan struct{}
+	done    chan struct{}
 }
 
 func NewCPULimiter(signals SignalController, validators ...ProcessGenerationValidator) *CPULimiter {
@@ -99,6 +100,7 @@ func (limiter *CPULimiter) startEntryLocked(key string, request CPULimitRequest)
 		request: cloneCPULimitRequest(request),
 		cancel:  cancel,
 		updated: make(chan struct{}, 1),
+		done:    make(chan struct{}),
 	}
 	limiter.entries[key] = entry
 	go limiter.run(ctx, entry)
@@ -109,11 +111,14 @@ func (limiter *CPULimiter) stopEntryLocked(key string, entry *cpuLimitEntry) {
 		return
 	}
 	entry.cancel()
-	limiter.continueProcesses(entry.snapshot().Processes)
+	// Wait until the worker has resumed its processes and can no longer stop
+	// them or interfere with a replacement duty cycle.
+	<-entry.done
 	delete(limiter.entries, key)
 }
 
 func (limiter *CPULimiter) run(ctx context.Context, entry *cpuLimitEntry) {
+	defer close(entry.done)
 	limiter.continueProcesses(entry.snapshot().Processes)
 	for {
 		if entry.waitForLimitPhase(ctx, limitPhaseRun, time.Now()) {
@@ -170,6 +175,9 @@ const (
 
 func (entry *cpuLimitEntry) waitForLimitPhase(ctx context.Context, phase limitPhase, started time.Time) bool {
 	for {
+		if ctx.Err() != nil {
+			return true
+		}
 		duration := entry.phaseDuration(phase)
 		remaining := duration - time.Since(started)
 		if remaining <= 0 {

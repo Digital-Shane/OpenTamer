@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v1.4.0] - 2026-09-06
+### Added
+- Background only CPU limiting, with `In Background` and `Always` modes for preset and custom limits.
+
 ## [v1.3.0] - 2026-06-30
 ### Added
 - Persisted theme preference with default/backfill behavior (Thanks @kerem0x !)

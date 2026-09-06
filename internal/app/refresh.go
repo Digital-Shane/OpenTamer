@@ -202,7 +202,7 @@ func needsFrontmostApp(rules []core.AppRule) bool {
 		switch rule.Mode {
 		case core.RuleModePauseInBackground, core.RuleModeHideAfterIdle, core.RuleModeQuitAfterIdle:
 			return true
-		case core.RuleModeLowerPriorityInBackground:
+		case core.RuleModeLowerPriorityInBackground, core.RuleModeLimitCPUInBackground:
 			if rule.BackgroundOnly {
 				return true
 			}

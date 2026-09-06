@@ -446,10 +446,14 @@ func ruleLabel(rule core.AppRule) string {
 		}
 		return "Lower Priority Always"
 	case core.RuleModeLimitCPUInBackground:
+		label := "Limit CPU"
 		if rule.CPUPercent != nil {
-			return fmt.Sprintf("Limit CPU to %s", apppolicy.FormatCPULimitPercent(*rule.CPUPercent))
+			label += fmt.Sprintf(" to %s", apppolicy.FormatCPULimitPercent(*rule.CPUPercent))
 		}
-		return "Limit CPU"
+		if rule.BackgroundOnly {
+			return label + " in Background"
+		}
+		return label + " Always"
 	case core.RuleModeHideAfterIdle:
 		return "Hide After Idle"
 	case core.RuleModeQuitAfterIdle:
