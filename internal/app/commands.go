@@ -136,7 +136,7 @@ func (controller *Controller) handleRuleCommandLocked(parts []string) {
 	mode := parts[1]
 	appKey := parts[2]
 	targetCPU := 0.0
-	if mode == "limit" {
+	if mode == "limit" || mode == "limit-background" || mode == "limit-always" {
 		if len(parts) < 4 {
 			return
 		}
@@ -227,9 +227,9 @@ func (controller *Controller) handleRuleCommandLocked(parts []string) {
 		rule.Mode = core.RuleModeLowerPriorityInBackground
 		rule.BackgroundOnly = false
 		rule.NiceValue = &nice
-	case "limit":
+	case "limit", "limit-background", "limit-always":
 		rule.Mode = core.RuleModeLimitCPUInBackground
-		rule.BackgroundOnly = false
+		rule.BackgroundOnly = mode == "limit-background"
 		rule.CPUPercent = &targetCPU
 	case "pause":
 		rule.Mode = core.RuleModePauseInBackground
@@ -255,7 +255,7 @@ func (controller *Controller) upsertRuleLocked(rule core.AppRule, mode string) {
 		log.Printf("OpenTamer rule update warning: %v", err)
 		return
 	}
-	if mode == "limit" {
+	if mode == "limit" || mode == "limit-background" || mode == "limit-always" {
 		cfg.Preferences.CPULimiterEnabled = true
 	}
 	controller.cfg = cfg

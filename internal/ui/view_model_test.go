@@ -448,6 +448,32 @@ func TestBuildManagedRowsLabelsPriorityScope(t *testing.T) {
 	}
 }
 
+func TestBuildManagedRowsLabelsCPULimitScope(t *testing.T) {
+	target := 0.01
+	for _, tc := range []struct {
+		backgroundOnly bool
+		target         *float64
+		label          string
+	}{
+		{true, &target, "Limit CPU to 0.01% in Background"},
+		{false, &target, "Limit CPU to 0.01% Always"},
+		{true, nil, "Limit CPU in Background"},
+		{false, nil, "Limit CPU Always"},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			rows := BuildManagedRows([]core.AppRule{{
+				AppID:          core.AppID{Name: "Worker"},
+				Mode:           core.RuleModeLimitCPUInBackground,
+				BackgroundOnly: tc.backgroundOnly,
+				CPUPercent:     tc.target,
+			}}, nil, nil, nil)
+			if len(rows) != 1 || rows[0].RuleLabel != tc.label {
+				t.Fatalf("rows = %#v, want label %q", rows, tc.label)
+			}
+		})
+	}
+}
+
 func TestBuildProcessCPUGraphKeepsProcessLinesInRowOrder(t *testing.T) {
 	appA := core.AppID{Name: "A"}
 	appB := core.AppID{Name: "B"}
