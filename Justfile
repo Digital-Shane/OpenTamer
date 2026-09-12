@@ -23,7 +23,9 @@ build:
   mkdir -p "$contents/MacOS" "$contents/Resources"
   cp packaging/Info.plist "$contents/Info.plist"
   cp assets/opentamer-icon.icns "$contents/Resources/opentamer-icon.icns"
-  export CGO_LDFLAGS="${CGO_LDFLAGS:-} -Wl,-no_warn_duplicate_libraries"
+  export MACOSX_DEPLOYMENT_TARGET=14.0
+  export CGO_CFLAGS="${CGO_CFLAGS:--O2 -g} -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+  export CGO_LDFLAGS="${CGO_LDFLAGS:-} -Wl,-no_warn_duplicate_libraries -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
   go build -trimpath -o "$contents/MacOS/OpenTamer" ./cmd/opentamer
   if [ "$codesign_identity" = "-" ]; then
     codesign --force --sign "$codesign_identity" "$app"
