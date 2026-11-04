@@ -63,10 +63,12 @@ func TestUpdateMenuBarStateAndUpdaterEncodeStateForNativeBridge(t *testing.T) {
 		payloads = append(payloads, value)
 	}
 
+	budget := 62.5
 	state := ui.MenuBarViewState{
-		Enabled:    true,
-		TotalCPU:   9.5,
-		AlertLevel: core.AlertLevelNormal,
+		Enabled:     true,
+		TotalCPU:    9.5,
+		AlertLevel:  core.AlertLevelNormal,
+		Preferences: core.GlobalPreferences{GlobalCPUPercent: &budget},
 	}
 	if err := UpdateMenuBarState(state); err != nil {
 		t.Fatalf("update menu bar state: %v", err)
@@ -85,6 +87,30 @@ func TestUpdateMenuBarStateAndUpdaterEncodeStateForNativeBridge(t *testing.T) {
 		}
 		if decoded.TotalCPU != 9.5 || decoded.AlertLevel != core.AlertLevelNormal {
 			t.Fatalf("decoded state = totalCPU:%v alert:%q, want 9.5/%q", decoded.TotalCPU, decoded.AlertLevel, core.AlertLevelNormal)
+		}
+		if decoded.Preferences.GlobalCPUPercent == nil || *decoded.Preferences.GlobalCPUPercent != budget {
+			t.Fatalf("native bridge lost global CPU budget: %+v", decoded.Preferences)
+		}
+	}
+
+	for _, managementEnabled := range []bool{false, true} {
+		for _, limiterEnabled := range []bool{false, true} {
+			state.Enabled = managementEnabled
+			state.Preferences.ManagementEnabled = managementEnabled
+			state.Preferences.CPULimiterEnabled = limiterEnabled
+			if err := UpdateMenuBarState(state); err != nil {
+				t.Fatal(err)
+			}
+			var decoded ui.MenuBarViewState
+			if err := json.Unmarshal([]byte(payloads[len(payloads)-1]), &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Enabled != managementEnabled || decoded.Preferences.ManagementEnabled != managementEnabled || decoded.Preferences.CPULimiterEnabled != limiterEnabled {
+				t.Fatalf("native bridge lost enable flags: %+v", decoded)
+			}
+			if decoded.Preferences.GlobalCPUPercent == nil || *decoded.Preferences.GlobalCPUPercent != budget {
+				t.Fatal("native bridge must preserve saved budget even when inactive")
+			}
 		}
 	}
 }
@@ -116,9 +142,11 @@ func TestMenuCommandHandlerDispatchesCommand(t *testing.T) {
 		got = command
 	})
 
-	dispatchMenuCommand("pref-bool|showMenuBarIcon|false")
-	if got != "pref-bool|showMenuBarIcon|false" {
-		t.Fatalf("dispatched command = %q", got)
+	for _, command := range []string{"pref-bool|showMenuBarIcon|false", "pref-float|globalCPUPercent|62.5", "pref-clear|globalCPUPercent"} {
+		dispatchMenuCommand(command)
+		if got != command {
+			t.Fatalf("dispatched command = %q, want %q", got, command)
+		}
 	}
 
 	SetMenuCommandHandler(nil)

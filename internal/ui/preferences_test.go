@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -8,6 +9,48 @@ import (
 	"github.com/Digital-Shane/open-tamer/internal/core"
 	apppolicy "github.com/Digital-Shane/open-tamer/internal/policy"
 )
+
+func TestGlobalCPUBudgetPreferences(t *testing.T) {
+	for _, value := range []float64{1, 10, 25, 50, 62.5, 75, 90, 100} {
+		cfg := config.DefaultConfig()
+		cfg.Preferences.CPULimiterEnabled = false
+		updated, err := ApplyPreferencesCommand(cfg, PreferencesCommand{
+			Kind: CommandSetFloatPreference, Field: PreferenceGlobalCPUPercent, FloatValue: value,
+		})
+		if err != nil {
+			t.Fatalf("set %g: %v", value, err)
+		}
+		if updated.Preferences.GlobalCPUPercent == nil || *updated.Preferences.GlobalCPUPercent != value || !updated.Preferences.CPULimiterEnabled {
+			t.Fatalf("budget %g not applied with limiter enabled: %+v", value, updated.Preferences)
+		}
+		cleared, err := ApplyPreferencesCommand(updated, PreferencesCommand{Kind: CommandClearPreference, Field: PreferenceGlobalCPUPercent})
+		if err != nil || cleared.Preferences.GlobalCPUPercent != nil || !cleared.Preferences.CPULimiterEnabled {
+			t.Fatalf("clear must disable only the global budget: %+v, %v", cleared.Preferences, err)
+		}
+		reset, err := ApplyPreferencesCommand(updated, PreferencesCommand{Kind: CommandResetGlobalDefaults})
+		if err != nil || reset.Preferences.GlobalCPUPercent != nil {
+			t.Fatalf("reset must disable the global budget: %+v, %v", reset.Preferences, err)
+		}
+	}
+}
+
+func TestGlobalCPUBudgetRejectsInvalidValuesWithoutMutation(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1, 0, 0.99, 100.01} {
+		cfg := config.DefaultConfig()
+		budget := 50.0
+		cfg.Preferences.GlobalCPUPercent = &budget
+		cfg.Preferences.CPULimiterEnabled = false
+		updated, err := ApplyPreferencesCommand(cfg, PreferencesCommand{
+			Kind: CommandSetFloatPreference, Field: PreferenceGlobalCPUPercent, FloatValue: value,
+		})
+		if err == nil {
+			t.Fatalf("accepted invalid value %g", value)
+		}
+		if updated.Preferences.GlobalCPUPercent != &budget || budget != 50 || updated.Preferences.CPULimiterEnabled {
+			t.Fatalf("invalid value %g changed preferences: %+v", value, updated.Preferences)
+		}
+	}
+}
 
 func TestApplyPreferencesCommandUpdatesTypedControl(t *testing.T) {
 	cfg := config.DefaultConfig()

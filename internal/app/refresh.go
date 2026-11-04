@@ -2,7 +2,9 @@ package app
 
 import (
 	"log"
+	"math"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/config"
@@ -18,6 +20,10 @@ func (controller *Controller) Refresh() {
 	started := time.Now()
 
 	controller.mu.Lock()
+	if controller.stopped {
+		controller.mu.Unlock()
+		return
+	}
 	cfg := controller.cfg
 	runtimeState := controller.runtime
 	stats := controller.stats
@@ -62,20 +68,26 @@ func (controller *Controller) Refresh() {
 
 	systemSample, systemErr := controller.metrics.SampleSystemCPU()
 	totalCPU := lastTotalCPU
+	budgetTotalCPU := math.NaN()
 	if systemErr == nil {
 		if usage := controller.systemCPU.Update(systemSample); usage != nil {
 			totalCPU = usage.TotalPercent
+			budgetTotalCPU = usage.TotalPercent
 		}
 	} else {
 		log.Printf("OpenTamer system CPU warning: %v", systemErr)
 	}
+	if metricsErr != nil {
+		budgetTotalCPU = math.NaN()
+	}
 
 	audioActive := false
-	if needsAudioProtection(cfg.Rules) {
+	if needsAudioProtection(cfg.Rules) || cfg.Preferences.GlobalCPUPercent != nil {
 		var audioErr error
 		audioActive, audioErr = controller.audio.AudioActive()
 		if audioErr != nil {
 			log.Printf("OpenTamer audio warning: %v", audioErr)
+			budgetTotalCPU = math.NaN()
 		}
 	}
 	policyNow := time.Now()
@@ -85,6 +97,7 @@ func (controller *Controller) Refresh() {
 		policy, policyErr = controller.system.Snapshot()
 		if policyErr != nil {
 			log.Printf("OpenTamer system policy warning: %v", policyErr)
+			budgetTotalCPU = math.NaN()
 		}
 	}
 	policy = apppolicy.ApplyWakeGrace(cfg.Preferences, policy, controller.launchedAt, policyNow)
@@ -96,21 +109,24 @@ func (controller *Controller) Refresh() {
 	}
 
 	result := controller.scheduler.Evaluate(apppolicy.SchedulerInput{
-		Groups:      groups,
-		Rules:       cfg.Rules,
-		AppSamples:  appSamples,
-		Preferences: cfg.Preferences,
-		Runtime:     runtimeState,
-		Frontmost:   frontmost,
-		Policy:      policy,
-		Protections: protections,
-		Now:         policyNow,
+		Groups:          groups,
+		Rules:           cfg.Rules,
+		AppSamples:      appSamples,
+		Preferences:     cfg.Preferences,
+		Runtime:         runtimeState,
+		Frontmost:       frontmost,
+		Policy:          policy,
+		Protections:     protections,
+		Now:             policyNow,
+		TotalCPUPercent: budgetTotalCPU,
+		LogicalCPUCount: runtime.NumCPU(),
 	})
 
-	runtimeState, failures := controller.executeActions(groups, result.Actions, result.Runtime)
+	// Retire old duty cycles before a pause rule can take ownership of a process.
 	if controller.limiter != nil {
 		controller.limiter.Update(cpuLimitRequests(groups, result.Actions))
 	}
+	runtimeState, failures := controller.executeActions(groups, result.Actions, result.Runtime)
 	for _, failure := range failures {
 		log.Printf("OpenTamer action failure: %s", failure.Error())
 	}
@@ -221,7 +237,7 @@ func needsAudioProtection(rules []core.AppRule) bool {
 }
 
 func needsSystemPolicy(cfg config.Config) bool {
-	if !hasControlRules(cfg.Rules) {
+	if !hasControlRules(cfg.Rules) && cfg.Preferences.GlobalCPUPercent == nil {
 		return false
 	}
 	preferences := cfg.Preferences

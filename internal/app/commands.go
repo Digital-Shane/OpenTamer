@@ -18,7 +18,15 @@ const (
 )
 
 func (controller *Controller) HandleMenuCommand(command string) {
+	if strings.SplitN(command, "|", 2)[0] == "quit" {
+		controller.Shutdown(core.ControlReasonGlobalDisabled)
+		return
+	}
 	controller.mu.Lock()
+	if controller.stopped {
+		controller.mu.Unlock()
+		return
+	}
 	refresh := controller.handleMenuCommandLocked(command)
 	controller.mu.Unlock()
 
@@ -59,9 +67,6 @@ func (controller *Controller) handleMenuCommandLocked(command string) bool {
 			controller.removeRuleLocked(parts[1])
 			controller.saveConfigLocked()
 		}
-	case "quit":
-		controller.shutdownLocked(core.ControlReasonGlobalDisabled)
-		return false
 	default:
 		log.Printf("OpenTamer unknown menu command: %q", command)
 	}

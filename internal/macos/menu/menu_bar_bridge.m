@@ -276,7 +276,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         NSString *name = [action[@"name"] isKindOfClass:NSString.class] ? action[@"name"] : @"";
         if ([name isEqualToString:@"toggle"]) {
             [self drawToggleAction:action];
-        } else if ([name isEqualToString:@"refresh"] || [name isEqualToString:@"preferences"] || [name isEqualToString:@"all-processes"]) {
+        } else if ([name isEqualToString:@"refresh"] || [name isEqualToString:@"preferences"] || [name isEqualToString:@"all-processes"] || [name isEqualToString:@"global-cpu-limit"]) {
             [self drawButtonAction:action];
         } else if ([name isEqualToString:@"process"] || [name isEqualToString:@"managed"]) {
             [self drawProcessAction:action];
@@ -308,6 +308,9 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         button.panelAction = action;
         button.target = target;
         button.action = selector;
+        if ([action[@"name"] isEqualToString:@"global-cpu-limit"]) {
+            button.toolTip = @"Total machine CPU budget; best effort for eligible apps. System and protected processes are excluded.";
+        }
         [self addSubview:button positioned:NSWindowAbove relativeTo:nil];
     }
 }
@@ -1649,6 +1652,47 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     [menu addItem:item];
 }
 
+- (NSString *)globalCPULimitTitle {
+    double current = [self floatPreference:@"globalCPUPercent" fallback:NAN];
+    BOOL hasBudget = isfinite(current) && current >= 1 && current <= 100;
+    NSString *value = hasBudget
+        ? [NSString stringWithFormat:@"%.6g%%", current] : @"Off";
+    if (hasBudget && (![self boolPreference:@"managementEnabled" fallback:[self managementEnabled]] ||
+                      ![self boolPreference:@"cpuLimiterEnabled" fallback:YES])) {
+        value = [value stringByAppendingString:@" (Inactive)"];
+    }
+    return [NSString stringWithFormat:@"Global CPU Limit: %@", value];
+}
+
+- (NSMenu *)globalCPULimitMenu {
+    NSMenu *container = [[NSMenu alloc] initWithTitle:@"Global CPU Limit"];
+    [self addNullableFloatPreferenceWithTitle:[self globalCPULimitTitle]
+                                        key:@"globalCPUPercent"
+                                     labels:@[@"10%", @"25%", @"50%", @"75%", @"90%", @"100%"]
+                                     values:@[@10, @25, @50, @75, @90, @100]
+                                     toMenu:container];
+    NSMenu *submenu = container.itemArray.firstObject.submenu;
+    [submenu addItem:NSMenuItem.separatorItem];
+    NSMenuItem *custom = [[NSMenuItem alloc] initWithTitle:@"Custom..."
+                                                 action:@selector(promptForGlobalCPULimit:)
+                                          keyEquivalent:@""];
+    custom.target = self;
+    double current = [self floatPreference:@"globalCPUPercent" fallback:NAN];
+    BOOL presetSelected = NO;
+    for (NSMenuItem *preset in submenu.itemArray) {
+        if (preset.state == NSControlStateValueOn) {
+            presetSelected = YES;
+            break;
+        }
+    }
+    custom.state = isfinite(current) && current >= 1 && current <= 100 &&
+        !presetSelected
+        ? NSControlStateValueOn : NSControlStateValueOff;
+    custom.representedObject = [NSString stringWithFormat:@"pref-float|globalCPUPercent|%.17g", current];
+    [submenu addItem:custom];
+    return submenu;
+}
+
 - (NSMenuItem *)stringPreferencePresetItemWithTitle:(NSString *)title
                                                 key:(NSString *)key
                                               value:(NSString *)value
@@ -1972,7 +2016,7 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     NSUInteger topCount = MIN((NSUInteger)10, [self topProcesses].count);
     NSUInteger trackedCount = MIN((NSUInteger)2, [self trackedApps].count);
     NSUInteger managedCount = MIN((NSUInteger)2, [self managedApps].count);
-    CGFloat height = 12 + 30 + 8 + 118 + 20 + MAX((NSUInteger)1, topCount) * 24 + 10 + 28 + 20 + MAX((NSUInteger)1, trackedCount) * 24 + 8 + 20 + MAX((NSUInteger)1, managedCount) * 24 + 30;
+    CGFloat height = 12 + 30 + 8 + 118 + 20 + MAX((NSUInteger)1, topCount) * 24 + 10 + 28 + 34 + 20 + MAX((NSUInteger)1, trackedCount) * 24 + 8 + 20 + MAX((NSUInteger)1, managedCount) * 24 + 30;
 
     OpenTamerPanelView *view = [[OpenTamerPanelView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     view.controller = (id<OpenTamerPanelActionHandling>)self;
@@ -2033,6 +2077,13 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
                      row:nil
                     kind:nil
                    title:[NSString stringWithFormat:@"All Processes (%lu) >", (unsigned long)[self allProcesses].count]];
+    y += 34;
+
+    [view addActionNamed:@"global-cpu-limit"
+                   frame:NSMakeRect(padding, y, width - padding * 2, 26)
+                     row:nil
+                    kind:nil
+                   title:[[self globalCPULimitTitle] stringByAppendingString:@" >"]];
     y += 34;
 
     [self addSectionHeaderToView:view y:&y width:width padding:padding title:@"Tracked Processes" showColumns:YES];
@@ -2179,6 +2230,10 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
         [self popUpMenu:[self preferencesMenu] fromPanel:view action:action];
         return;
     }
+    if ([name isEqualToString:@"global-cpu-limit"]) {
+        [self popUpMenu:[self globalCPULimitMenu] fromPanel:view action:action];
+        return;
+    }
     if ([name isEqualToString:@"all-processes"]) {
         [self popUpMenu:[self allProcessesMenu] fromPanel:view action:action];
         return;
@@ -2268,6 +2323,38 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     }
 
     NSString *command = [NSString stringWithFormat:@"rule|%@|%.6g|%@", mode, value, appKey];
+    opentamer_menu_command(command.UTF8String);
+}
+
+- (void)promptForGlobalCPULimit:(id)sender {
+    [NSApp activateIgnoringOtherApps:YES];
+
+    double current = [self floatPreference:@"globalCPUPercent" fallback:50];
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 220, 24)];
+    field.stringValue = [NSString stringWithFormat:@"%.6g", current];
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Global CPU Limit (%)";
+    alert.accessoryView = field;
+    [alert addButtonWithTitle:@"Apply"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) {
+        return;
+    }
+
+    NSString *rawValue = [field.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSScanner *scanner = [NSScanner scannerWithString:rawValue];
+    scanner.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    double value = 0;
+    if (![scanner scanDouble:&value] || !scanner.isAtEnd || !isfinite(value) || value < 1 || value > 100) {
+        NSAlert *validation = [[NSAlert alloc] init];
+        validation.messageText = @"CPU limit not applied";
+        validation.informativeText = @"Enter a number from 1 to 100%.";
+        [validation addButtonWithTitle:@"OK"];
+        [validation runModal];
+        return;
+    }
+    NSString *command = [NSString stringWithFormat:@"pref-float|globalCPUPercent|%.17g", value];
     opentamer_menu_command(command.UTF8String);
 }
 
