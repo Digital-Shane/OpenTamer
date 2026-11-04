@@ -38,6 +38,7 @@ type Controller struct {
 
 	mu                 sync.Mutex
 	refreshMu          sync.Mutex
+	stopped            bool
 	cfg                config.Config
 	runtime            core.RuntimeState
 	stats              core.StatsDocument
@@ -136,8 +137,14 @@ func (controller *Controller) saveConfigLocked() {
 }
 
 func (controller *Controller) Shutdown(reason core.ControlReason) {
+	controller.refreshMu.Lock()
+	defer controller.refreshMu.Unlock()
 	controller.mu.Lock()
 	defer controller.mu.Unlock()
+	if controller.stopped {
+		return
+	}
+	controller.stopped = true
 	controller.shutdownLocked(reason)
 }
 

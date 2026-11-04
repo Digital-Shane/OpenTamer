@@ -128,6 +128,7 @@ func NormalizeTrackIn(locations []RuleTrackingLocation) []RuleTrackingLocation {
 type GlobalPreferences struct {
 	ManagementEnabled             bool          `json:"managementEnabled"`
 	CPULimiterEnabled             bool          `json:"cpuLimiterEnabled"`
+	GlobalCPUPercent              *float64      `json:"globalCPUPercent,omitempty"`
 	AggregateByName               bool          `json:"aggregateByName"`
 	ShowMenuBarIcon               bool          `json:"showMenuBarIcon"`
 	TopProcessesSort              string        `json:"topProcessesSort"`

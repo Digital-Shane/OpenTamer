@@ -16,6 +16,10 @@ type CPULimitRequest struct {
 	StopFor   time.Duration
 }
 
+type stoppedProcessObserver interface {
+	IsStopped(core.ProcessRef) (bool, error)
+}
+
 type CPULimiter struct {
 	signals   SignalController
 	validator ProcessGenerationValidator
@@ -54,31 +58,48 @@ func (limiter *CPULimiter) Update(requests []CPULimitRequest) {
 		limiter.entries = make(map[string]*cpuLimitEntry)
 	}
 
-	seen := make(map[string]bool, len(requests))
+	accepted := make(map[string]CPULimitRequest, len(requests))
+	owned := make(map[int]bool)
 	for _, request := range requests {
 		if request.AppID.IsEmpty() || len(request.Processes) == 0 || request.RunFor <= 0 || request.StopFor <= 0 {
 			continue
 		}
 		key := request.AppID.Key()
-		seen[key] = true
+		if _, ok := accepted[key]; ok {
+			continue
+		}
+		overlaps := false
+		for _, process := range request.Processes {
+			if owned[process.ID.PID] {
+				overlaps = true
+				break
+			}
+		}
+		if overlaps {
+			continue
+		}
+		for _, process := range request.Processes {
+			owned[process.ID.PID] = true
+		}
+		accepted[key] = request
+	}
+	// Finish every old owner before starting workers for regrouped PIDs.
+	for key, entry := range limiter.entries {
+		request, ok := accepted[key]
+		if !ok || !sameCPULimitProcesses(entry.snapshot(), request) {
+			limiter.stopEntryLocked(key, entry)
+		}
+	}
+	for key, request := range accepted {
 		if existing := limiter.entries[key]; existing != nil {
 			existingRequest := existing.snapshot()
 			if sameCPULimitRequest(existingRequest, request) {
 				continue
 			}
-			if sameCPULimitProcesses(existingRequest, request) {
-				existing.update(request)
-				continue
-			}
-			limiter.stopEntryLocked(key, existing)
+			existing.update(request)
+			continue
 		}
 		limiter.startEntryLocked(key, request)
-	}
-
-	for key, entry := range limiter.entries {
-		if !seen[key] {
-			limiter.stopEntryLocked(key, entry)
-		}
 	}
 }
 
@@ -119,32 +140,44 @@ func (limiter *CPULimiter) stopEntryLocked(key string, entry *cpuLimitEntry) {
 
 func (limiter *CPULimiter) run(ctx context.Context, entry *cpuLimitEntry) {
 	defer close(entry.done)
-	limiter.continueProcesses(entry.snapshot().Processes)
 	for {
 		if entry.waitForLimitPhase(ctx, limitPhaseRun, time.Now()) {
-			limiter.continueProcesses(entry.snapshot().Processes)
 			return
 		}
 		request := entry.snapshot()
-		limiter.stopProcesses(request.Processes)
+		stopped := limiter.stopProcesses(request.Processes)
 		if entry.waitForLimitPhase(ctx, limitPhaseStop, time.Now()) {
-			limiter.continueProcesses(entry.snapshot().Processes)
+			limiter.continueProcesses(stopped)
 			return
 		}
-		limiter.continueProcesses(entry.snapshot().Processes)
+		limiter.continueProcesses(stopped)
 	}
 }
 
-func (limiter *CPULimiter) stopProcesses(processes []core.ProcessRef) {
+func (limiter *CPULimiter) stopProcesses(processes []core.ProcessRef) []core.ProcessRef {
+	stopped := make([]core.ProcessRef, 0, len(processes))
 	for _, process := range processes {
 		if err := limiter.validateProcess(process); err != nil {
 			log.Printf("OpenTamer CPU limiter stop skipped: pid %d %s: %v", process.ID.PID, process.DisplayName(), err)
 			continue
 		}
+		if observer, ok := limiter.signals.(stoppedProcessObserver); ok {
+			alreadyStopped, err := observer.IsStopped(process)
+			if err != nil {
+				log.Printf("OpenTamer CPU limiter state skipped: pid %d: %v", process.ID.PID, err)
+				continue
+			}
+			if alreadyStopped {
+				continue
+			}
+		}
 		if err := limiter.signals.Stop(process); err != nil {
 			log.Printf("OpenTamer CPU limiter stop failure: pid %d %s: %v", process.ID.PID, process.DisplayName(), err)
+		} else {
+			stopped = append(stopped, process)
 		}
 	}
+	return stopped
 }
 
 func (limiter *CPULimiter) continueProcesses(processes []core.ProcessRef) {

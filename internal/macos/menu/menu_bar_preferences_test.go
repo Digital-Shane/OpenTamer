@@ -37,6 +37,7 @@ func TestPreferencesMenuExposesExpectedConfigKeys(t *testing.T) {
 		"cpuGraphWindow",
 		"disableWhenACBatteryAbove",
 		"disableWhenUserIdleLongerThan",
+		"globalCPUPercent",
 		"highCPUDetectionEnabled",
 		"highCPUCooldown",
 		"highCPUDuration",
@@ -140,6 +141,23 @@ func TestHighCPUAlertThresholdMenuHasCustomEntry(t *testing.T) {
 	if !strings.Contains(source, `@selector(promptForHighCPUThreshold:)`) ||
 		!strings.Contains(source, `pref-float|highCPUThreshold|%.6g`) {
 		t.Fatal("high CPU alert threshold should expose a custom entry that saves through the float preference command")
+	}
+}
+
+func TestGlobalCPULimitMenuAndPrompt(t *testing.T) {
+	payload, err := os.ReadFile("menu_bar_bridge.m")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(payload)
+	for _, expected := range []string{
+		`addActionNamed:@"global-cpu-limit"`,
+		`[self popUpMenu:[self globalCPULimitMenu] fromPanel:view action:action]`,
+		`@selector(promptForGlobalCPULimit:)`,
+	} {
+		if !strings.Contains(source, expected) {
+			t.Fatalf("global CPU limit missing %s", expected)
+		}
 	}
 }
 
