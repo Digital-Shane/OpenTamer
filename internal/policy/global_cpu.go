@@ -3,7 +3,9 @@ package policy
 import (
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/core"
@@ -128,13 +130,33 @@ func globalCPUEnabled(p core.GlobalPreferences) bool {
 		finiteCPU(*p.GlobalCPUPercent) && *p.GlobalCPUPercent >= 1 && *p.GlobalCPUPercent <= 100
 }
 
+// GlobalCPUProcessSafe checks whether automatic CPU controls may target a process.
+func GlobalCPUProcessSafe(process core.ProcessRef) bool {
+	if process.ID.PID <= 0 || process.ID.StartTime.IsZero() || process.UID != os.Getuid() || process.UID == 0 || !core.NewSafetyPolicy(os.Getpid()).ClassifyProcess(process).CanPause {
+		return false
+	}
+	if !filepath.IsAbs(process.ExecutablePath) {
+		return false
+	}
+	path := filepath.Clean(process.ExecutablePath)
+	for _, directory := range []string{"/System/Library", "/usr/libexec", "/usr/sbin", "/sbin", "/Library/Apple"} {
+		if path == directory || strings.HasPrefix(path, directory+"/") {
+			return false
+		}
+	}
+	switch strings.TrimSpace(process.Name) {
+	case "Dock", "SystemUIServer", "ControlCenter", "NotificationCenter", "Spotlight", "Finder":
+		return false
+	}
+	return true
+}
+
 func globalCPUGroupSafe(group core.AppGroup) bool {
 	if group.Controllability != core.ControllabilityNormal || !core.SafetyDecisionFromGroup(group).CanPause || len(group.Processes) == 0 {
 		return false
 	}
-	safety := core.NewSafetyPolicy(os.Getpid())
 	for _, process := range group.Processes {
-		if process.UID != os.Getuid() || process.UID == 0 || !safety.ClassifyProcess(process).CanPause {
+		if !GlobalCPUProcessSafe(process) {
 			return false
 		}
 	}

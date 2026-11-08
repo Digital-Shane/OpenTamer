@@ -57,6 +57,106 @@ func globalLimitAction(result SchedulerResult) (core.ControlAction, bool) {
 	return core.ControlAction{}, false
 }
 
+func TestGlobalCPUProcessSafe(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("automatic controls exclude root")
+	}
+	for _, tc := range []struct {
+		path string
+		want bool
+	}{
+		{"/System/Library", false},
+		{"/System/Library/CoreServices/Worker", false},
+		{"/usr/libexec/Worker", false},
+		{"/usr/sbin/Worker", false},
+		{"/sbin/Worker", false},
+		{"/Library/Apple/System/Worker", false},
+		{"/Applications/../System/Library/Worker", false},
+		{"/usr//libexec/./Worker", false},
+		{"System/Library/Worker", false},
+		{"", false},
+		{"/System/Applications/Worker.app/Contents/MacOS/Worker", true},
+		{"/Applications/Worker.app/Contents/MacOS/Worker", true},
+		{"/bin/Worker", true},
+		{"/usr/bin/Worker", true},
+		{"/opt/homebrew/bin/Worker", true},
+		{"/usr/local/bin/Worker", true},
+		{"/System/LibraryExtra/Worker", true},
+		{"/usr/libexec-extra/Worker", true},
+		{"/usr/sbin-extra/Worker", true},
+		{"/sbin-extra/Worker", true},
+		{"/Library/AppleExtra/Worker", true},
+		{"/System/Library/../../Applications/Worker", true},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			process := globalTestInput().Groups[0].Processes[0]
+			process.ExecutablePath = tc.path
+			if got := GlobalCPUProcessSafe(process); got != tc.want {
+				t.Fatalf("GlobalCPUProcessSafe(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGlobalCPURejectsUnsafeGroupMembers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*core.ProcessRef)
+	}{
+		{"unknown generation", func(p *core.ProcessRef) { p.ID.StartTime = time.Time{} }},
+		{"zero PID", func(p *core.ProcessRef) { p.ID.PID = 0 }},
+		{"negative PID", func(p *core.ProcessRef) { p.ID.PID = -1 }},
+		{"root", func(p *core.ProcessRef) { p.UID = 0 }},
+		{"other user", func(p *core.ProcessRef) { p.UID = os.Getuid() + 1 }},
+		{"self", func(p *core.ProcessRef) { p.ID.PID = os.Getpid() }},
+		{"system path", func(p *core.ProcessRef) { p.ExecutablePath = "/usr/libexec/Worker" }},
+		{"unknown path", func(p *core.ProcessRef) { p.ExecutablePath = "" }},
+		{"essential", func(p *core.ProcessRef) { p.Name = "WindowServer" }},
+		{"helper", func(p *core.ProcessRef) { p.Name = "opentamer-helper" }},
+		{"accessibility", func(p *core.ProcessRef) { p.Name = "VoiceOver" }},
+		{"Dock", func(p *core.ProcessRef) { p.Name = "Dock" }},
+		{"SystemUIServer", func(p *core.ProcessRef) { p.Name = "SystemUIServer" }},
+		{"ControlCenter", func(p *core.ProcessRef) { p.Name = "ControlCenter" }},
+		{"NotificationCenter", func(p *core.ProcessRef) { p.Name = "NotificationCenter" }},
+		{"Spotlight", func(p *core.ProcessRef) { p.Name = "Spotlight" }},
+		{"Finder", func(p *core.ProcessRef) { p.Name = " Finder " }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := globalTestInput()
+			process := input.Groups[0].Processes[0]
+			process.ID.PID++
+			tc.change(&process)
+			if GlobalCPUProcessSafe(process) {
+				t.Fatal("unsafe process accepted")
+			}
+			input.Groups[0].Processes = append(input.Groups[0].Processes, process)
+			if globalCPUGroupSafe(input.Groups[0]) {
+				t.Fatal("mixed group accepted")
+			}
+			if result := NewScheduler().Evaluate(input); len(result.Actions) != 0 {
+				t.Fatalf("mixed group was controlled: %#v", result.Actions)
+			}
+		})
+	}
+}
+
+func TestGlobalCPUSafetyLeavesExplicitRulesUnchanged(t *testing.T) {
+	for _, name := range []string{"Worker", "Dock", "SystemUIServer"} {
+		t.Run(name, func(t *testing.T) {
+			input := globalTestInput()
+			input.Groups[0].Processes[0].Name = name
+			input.Groups[0].Processes[0].ExecutablePath = "/System/Library/CoreServices/Worker"
+			target := 20.0
+			input.Rules = []core.AppRule{{AppID: input.Groups[0].ID, Mode: core.RuleModeLimitCPUInBackground, CPUPercent: &target}}
+			result := NewScheduler().Evaluate(input)
+			action, ok := globalLimitAction(result)
+			if !ok || len(result.Actions) != 1 || *action.CPUPercent != target || action.Message == "global CPU budget" {
+				t.Fatalf("explicit rule changed: %#v", result.Actions)
+			}
+		})
+	}
+}
+
 func TestGlobalCPUSustainedDemandChanges(t *testing.T) {
 	input := globalTestInput()
 	scheduler := NewScheduler()
