@@ -118,6 +118,10 @@ func (enumerator liveWorkerEnumerator) ProcessGeneration(pid int) (core.ProcessI
 	return enumerator.base.(app.ProcessGenerationLookup).ProcessGeneration(pid)
 }
 
+func (enumerator liveWorkerEnumerator) ProcessIdentity(pid int) (core.ProcessRef, error) {
+	return enumerator.base.(app.ProcessIdentityLookup).ProcessIdentity(pid)
+}
+
 type liveWorkerMetrics struct{ base app.MetricsSampler }
 
 func (metrics liveWorkerMetrics) SampleProcesses(processes []core.ProcessRef) ([]core.ProcessMetrics, error) {

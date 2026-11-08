@@ -2424,7 +2424,6 @@ static NSColor *OpenTamerGraphColor(NSUInteger index) {
 
 - (void)quit:(id)sender {
     opentamer_menu_command("quit");
-    [NSApp terminate:nil];
 }
 
 @end

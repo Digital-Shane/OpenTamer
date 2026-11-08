@@ -23,7 +23,7 @@ func (controller *Controller) HandleMenuCommand(command string) {
 		return
 	}
 	controller.mu.Lock()
-	if controller.stopped {
+	if controller.stopped || controller.shutdownRequested {
 		controller.mu.Unlock()
 		return
 	}

@@ -21,7 +21,7 @@ func TestBackgroundCPULimitResumesStoppedProcessesOnFocus(t *testing.T) {
 	}
 	signals := &limiterSignals{}
 	limiter := NewCPULimiter(signals)
-	t.Cleanup(limiter.StopAll)
+	t.Cleanup(func() { limiter.StopAll() })
 	target := 0.01
 	input := apppolicy.SchedulerInput{
 		Groups:      []core.AppGroup{group},

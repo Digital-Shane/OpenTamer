@@ -81,7 +81,7 @@ func TestCPULimiterPreservesExternalStopsAndObservationFailures(t *testing.T) {
 func TestCPULimiterDeduplicatesAndTransfersPIDOwnership(t *testing.T) {
 	signals := &limiterSignals{}
 	limiter := NewCPULimiter(signals)
-	t.Cleanup(limiter.StopAll)
+	t.Cleanup(func() { limiter.StopAll() })
 	process := core.ProcessRef{ID: core.ProcessID{PID: 42, StartTime: time.Unix(1, 0)}}
 	first := CPULimitRequest{AppID: core.AppID{Name: "First"}, Processes: []core.ProcessRef{process}, RunFor: time.Millisecond, StopFor: time.Hour}
 	second := first

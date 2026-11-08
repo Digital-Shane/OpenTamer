@@ -19,7 +19,7 @@ func TestCPULimiterStopsAndContinuesProcesses(t *testing.T) {
 		RunFor:    time.Millisecond,
 		StopFor:   time.Millisecond,
 	}})
-	t.Cleanup(limiter.StopAll)
+	t.Cleanup(func() { limiter.StopAll() })
 
 	if !signals.waitForStops(1, 100*time.Millisecond) {
 		t.Fatalf("stops = %d, want at least 1", signals.stopCount())
@@ -60,7 +60,7 @@ func TestCPULimiterUpdatesDutyCycleWithoutRestartingStoppedEntry(t *testing.T) {
 		RunFor:    time.Millisecond,
 		StopFor:   time.Hour,
 	}})
-	t.Cleanup(limiter.StopAll)
+	t.Cleanup(func() { limiter.StopAll() })
 
 	if !signals.waitForStops(1, 100*time.Millisecond) {
 		t.Fatalf("stops = %d, want at least 1", signals.stopCount())
@@ -91,7 +91,7 @@ func TestCPULimiterShortensCurrentRunPhaseOnDutyCycleUpdate(t *testing.T) {
 		RunFor:    time.Hour,
 		StopFor:   time.Hour,
 	}})
-	t.Cleanup(limiter.StopAll)
+	t.Cleanup(func() { limiter.StopAll() })
 
 	limiter.Update([]CPULimitRequest{{
 		AppID:     core.AppID{Name: "Worker"},

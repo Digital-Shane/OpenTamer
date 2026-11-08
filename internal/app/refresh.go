@@ -25,6 +25,9 @@ func (controller *Controller) Refresh() {
 		return
 	}
 	cfg := controller.cfg
+	if controller.shutdownRequested {
+		cfg.Preferences.ManagementEnabled = false
+	}
 	runtimeState := controller.runtime
 	stats := controller.stats
 	lastTotalCPU := controller.lastTotalCPU
@@ -123,17 +126,21 @@ func (controller *Controller) Refresh() {
 	})
 
 	// Retire old duty cycles before a pause rule can take ownership of a process.
+	var failures []ControlFailure
 	if controller.limiter != nil {
-		controller.limiter.Update(cpuLimitRequests(groups, result.Actions))
+		failures = controller.limiter.Update(cpuLimitRequests(groups, result.Actions))
+		result.Actions = actionsWithoutRecoveryConflicts(result.Actions, controller.limiter.PendingRecovery())
 	}
-	runtimeState, failures := controller.executeActions(groups, result.Actions, result.Runtime)
+	runtimeState, actionFailures := controller.executeActions(groups, result.Actions, result.Runtime)
+	failures = append(failures, actionFailures...)
 	for _, failure := range failures {
 		log.Printf("OpenTamer action failure: %s", failure.Error())
 	}
+	applyControlFailures(&result, &runtimeState, groups, failures)
 
 	statsDirty := false
 	for _, action := range result.Actions {
-		if action.Type == core.ControlActionPause {
+		if action.Type == core.ControlActionPause && groupPaused(groupFromAction(action), runtimeState) {
 			stats.RecordAutomaticPause(action.AppID)
 			statsDirty = true
 		}
@@ -160,6 +167,7 @@ func (controller *Controller) Refresh() {
 	controller.lastAppSamples = appSamples
 	controller.lastStatuses = result.Statuses
 	controller.lastTotalCPU = totalCPU
+	controller.controlError = recoveryStatus(failures)
 	if controller.history != nil {
 		controller.history.AddBatch(appSamples)
 	}

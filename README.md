@@ -144,6 +144,13 @@ not pausing.
 Audio is also protected. If sound is currently playing, background control rules that could interrupt that work are
 blocked until the audio output is no longer active.
 
+Automatic global CPU limiting additionally excludes macOS session services and requires a known process generation.
+Failed CPU-limit resumes retain ownership and are retried, even after the limit is removed. Normal quit waits for owned
+pauses to be released; a failed resume keeps OpenTamer open and reports recovery in the panel. These safeguards do not
+guarantee recovery after a crash or forced termination. Process checks and POSIX signals are separate operations, so
+concurrent PID reuse or another tool stopping the same process cannot be made atomic by these checks.
+Priority and visibility restoration remain best effort; unresolved changes are retained in the saved runtime state.
+
 ## Privacy
 
 OpenTamer is local-only. It does not include telemetry, analytics, or outbound network client code in the current

@@ -39,6 +39,8 @@ type Controller struct {
 	mu                 sync.Mutex
 	refreshMu          sync.Mutex
 	stopped            bool
+	shutdownRequested  bool
+	controlError       string
 	cfg                config.Config
 	runtime            core.RuntimeState
 	stats              core.StatsDocument
@@ -74,6 +76,10 @@ func NewController(store config.Store, updater MenuBarUpdater, adapters Adapters
 	if lookup, ok := adapters.Processes.(ProcessGenerationLookup); ok {
 		processValidator = ProcessGenerationLookupValidator{Lookup: lookup}
 	}
+	limiterValidator := processValidator
+	if lookup, ok := adapters.Processes.(ProcessIdentityLookup); ok && processValidator != nil {
+		limiterValidator = automaticCPUValidator{ProcessGenerationValidator: processValidator, lookup: lookup}
+	}
 	now := time.Now()
 	return &Controller{
 		store:        store,
@@ -96,7 +102,7 @@ func NewController(store config.Store, updater MenuBarUpdater, adapters Adapters
 			ProcessValidator:         processValidator,
 			AllowPriorityImprovement: true,
 		},
-		limiter:           NewCPULimiter(adapters.Signals, processValidator),
+		limiter:           NewCPULimiter(adapters.Signals, limiterValidator),
 		cfg:               cfg,
 		runtime:           runtimeState,
 		stats:             stats,
@@ -136,21 +142,31 @@ func (controller *Controller) saveConfigLocked() {
 	}
 }
 
-func (controller *Controller) Shutdown(reason core.ControlReason) {
+func (controller *Controller) Shutdown(reason core.ControlReason) bool {
 	controller.refreshMu.Lock()
 	defer controller.refreshMu.Unlock()
 	controller.mu.Lock()
-	defer controller.mu.Unlock()
 	if controller.stopped {
-		return
+		controller.mu.Unlock()
+		return true
 	}
-	controller.stopped = true
-	controller.shutdownLocked(reason)
+	controller.shutdownRequested = true
+	controller.stopped = controller.shutdownLocked(reason)
+	state := controller.buildMenuBarStateLocked(time.Now(), "")
+	stopped := controller.stopped
+	controller.mu.Unlock()
+	if controller.updater != nil {
+		if err := controller.updater.UpdateMenuBarState(state); err != nil {
+			log.Printf("OpenTamer UI update warning: %v", err)
+		}
+	}
+	return stopped
 }
 
-func (controller *Controller) shutdownLocked(reason core.ControlReason) {
+func (controller *Controller) shutdownLocked(reason core.ControlReason) bool {
+	var failures []ControlFailure
 	if controller.limiter != nil {
-		controller.limiter.StopAll()
+		failures = controller.limiter.StopAll()
 	}
 	actions := apppolicy.NewScheduler().Evaluate(apppolicy.SchedulerInput{
 		Groups:      controller.lastGroups,
@@ -158,7 +174,8 @@ func (controller *Controller) shutdownLocked(reason core.ControlReason) {
 		Runtime:     controller.runtime,
 		Now:         time.Now(),
 	}).Actions
-	runtimeState, failures := controller.executeActions(controller.lastGroups, actions, controller.runtime)
+	runtimeState, actionFailures := controller.executeActions(controller.lastGroups, actions, controller.runtime)
+	failures = append(failures, actionFailures...)
 	for _, action := range actions {
 		runtimeState.AppendAction(action, 100)
 	}
@@ -168,6 +185,21 @@ func (controller *Controller) shutdownLocked(reason core.ControlReason) {
 	}
 	controller.saveRuntimeLocked()
 	controller.saveStatsLocked()
+	controller.controlError = recoveryStatus(failures)
+	// Other reversible changes remain persisted; stopped processes must not be abandoned.
+	return len(runtimeState.PausedProcesses) == 0 && (controller.limiter == nil || len(controller.limiter.PendingRecovery()) == 0)
+}
+
+func recoveryStatus(failures []ControlFailure) string {
+	for _, failure := range failures {
+		if failure.Action == core.ControlActionResume {
+			return "Recovery pending: " + failure.Error()
+		}
+	}
+	if len(failures) > 0 {
+		return "Control failed: " + failures[0].Error()
+	}
+	return ""
 }
 
 func (controller *Controller) saveRuntimeLocked() {

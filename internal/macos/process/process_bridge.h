@@ -19,6 +19,7 @@ typedef struct {
 } OpenTamerProcessInfo;
 
 int OpenTamerListPIDs(int *buffer, int capacity);
+// Returns 1 on success, or a negative errno on failure.
 int OpenTamerCopyProcessInfo(int pid, OpenTamerProcessInfo *out_info);
 
 #endif

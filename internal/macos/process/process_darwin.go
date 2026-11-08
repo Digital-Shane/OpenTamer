@@ -4,12 +4,14 @@ package process
 
 /*
 #include <stdlib.h>
+#include <limits.h>
 #include "process_bridge.h"
 */
 import "C"
 
 import (
 	"fmt"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -61,11 +63,21 @@ func (enumerator *ProcessEnumerator) Processes() ([]core.ProcessRef, error) {
 }
 
 func (enumerator *ProcessEnumerator) ProcessGeneration(pid int) (core.ProcessID, error) {
-	process, err := copyProcessRef(C.int(pid))
+	process, err := enumerator.ProcessIdentity(pid)
 	if err != nil {
 		return core.ProcessID{}, err
 	}
 	return process.ID, nil
+}
+
+func (enumerator *ProcessEnumerator) ProcessIdentity(pid int) (core.ProcessRef, error) {
+	if pid <= 0 {
+		return core.ProcessRef{}, appcontrol.ErrProcessExited
+	}
+	if pid > C.INT_MAX {
+		return core.ProcessRef{}, fmt.Errorf("read process identity for pid %d: %w", pid, syscall.EINVAL)
+	}
+	return copyProcessRef(C.int(pid))
 }
 
 func copyProcessRef(pid C.int) (core.ProcessRef, error) {
@@ -73,8 +85,8 @@ func copyProcessRef(pid C.int) (core.ProcessRef, error) {
 		return core.ProcessRef{}, appcontrol.ErrProcessExited
 	}
 	var info C.OpenTamerProcessInfo
-	if C.OpenTamerCopyProcessInfo(pid, &info) != 1 {
-		return core.ProcessRef{}, appcontrol.ErrProcessExited
+	if code := C.OpenTamerCopyProcessInfo(pid, &info); code != 1 {
+		return core.ProcessRef{}, processLookupError(int(pid), int(code))
 	}
 	return core.ProcessRef{
 		ID: core.ProcessID{
@@ -88,4 +100,15 @@ func copyProcessRef(pid C.int) (core.ProcessRef, error) {
 		Name:           C.GoString(&info.name[0]),
 		ExecutablePath: C.GoString(&info.path[0]),
 	}, nil
+}
+
+func processLookupError(pid, code int) error {
+	err := syscall.EIO
+	if code < 0 {
+		err = syscall.Errno(-code)
+	}
+	if err == syscall.ESRCH || err == syscall.ENOENT {
+		return fmt.Errorf("read process identity for pid %d: %w: %w", pid, appcontrol.ErrProcessExited, err)
+	}
+	return fmt.Errorf("read process identity for pid %d: %w", pid, err)
 }
