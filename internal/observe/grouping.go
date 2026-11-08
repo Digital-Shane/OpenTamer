@@ -110,18 +110,20 @@ func (grouper ProcessGrouper) Group(processes []ProcessRef, hints []AppProcessHi
 			continue
 		}
 		decision := grouper.classifyStandalone(process)
-		key := "pid:" + strconv.Itoa(process.ID.PID)
+		id := AppID{
+			Path: process.ExecutablePath,
+			Name: process.DisplayName(),
+		}
+		key := id.Key()
 		group := ensureGroup(groups, key, AppGroup{
-			ID: AppID{
-				Path: process.ExecutablePath,
-				Name: process.DisplayName(),
-			},
+			ID:              id,
 			Kind:            decision.Kind,
 			Controllability: decision.Controllability,
 			SafetyReason:    decision.Reason,
 			Status:          AppStatusObserved,
 		})
 		addProcess(group, process)
+		pidToGroup[process.ID.PID] = key
 	}
 
 	result := make([]AppGroup, 0, len(groups))
@@ -129,6 +131,7 @@ func (grouper ProcessGrouper) Group(processes []ProcessRef, hints []AppProcessHi
 		sort.Slice(group.Processes, func(i, j int) bool {
 			return group.Processes[i].ID.PID < group.Processes[j].ID.PID
 		})
+		*group = core.ApplySafetyDecision(*group, grouper.Safety.ClassifyGroup(*group))
 		result = append(result, *group)
 	}
 	sort.Slice(result, func(i, j int) bool {
