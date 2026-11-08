@@ -222,9 +222,6 @@ static NSColor *OpenTamerGraphColor(NSUInteger index) {
     }
 }
 
-static const CGFloat OpenTamerStatusItemLengthWithIcon = 78.0;
-static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
-
 @interface OpenTamerPanelView : NSView
 @property(nonatomic, assign) id<OpenTamerPanelActionHandling> controller;
 @property(nonatomic, strong) NSMutableArray *actions;
@@ -1031,9 +1028,8 @@ static const CGFloat OpenTamerStatusItemLengthTextOnly = 52.0;
     button.accessibilityLabel = @"OpenTamer";
     button.accessibilityIdentifier = @"OpenTamerStatusItem";
     BOOL showIcon = [self showMenuBarIcon];
-    self.statusItem.length = showIcon ? OpenTamerStatusItemLengthWithIcon : OpenTamerStatusItemLengthTextOnly;
     button.image = showIcon ? [self openTamerStatusIcon] : nil;
-    button.imagePosition = NSImageLeft;
+    button.imagePosition = showIcon ? NSImageLeft : NSNoImage;
     button.alignment = NSTextAlignmentCenter;
     button.target = self;
     button.action = @selector(togglePrimaryPopover:);
