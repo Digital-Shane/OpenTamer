@@ -2,6 +2,8 @@ package config
 
 import (
 	"bytes"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,80 @@ import (
 
 	"github.com/Digital-Shane/open-tamer/internal/core"
 )
+
+func TestGlobalCPUBudgetMigration(t *testing.T) {
+	if DefaultConfig().Preferences.GlobalCPUPercent != nil {
+		t.Fatal("global CPU budget must default to disabled")
+	}
+	legacy, err := MigrateConfig(Config{})
+	if err != nil || legacy.Preferences.GlobalCPUPercent != nil {
+		t.Fatalf("legacy config must keep budget disabled: %+v, %v", legacy.Preferences, err)
+	}
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -1, 0, 0.99, 100.01, 1, 50.5, 100} {
+		cfg := DefaultConfig()
+		cfg.Preferences.GlobalCPUPercent = &value
+		migrated, err := MigrateConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		valid := !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 1 && value <= 100
+		if !valid && migrated.Preferences.GlobalCPUPercent != nil {
+			t.Fatalf("invalid persisted budget %g must be disabled", value)
+		}
+		if valid && (migrated.Preferences.GlobalCPUPercent == nil || *migrated.Preferences.GlobalCPUPercent != value) {
+			t.Fatalf("valid budget %g must be preserved", value)
+		}
+	}
+}
+
+func TestGlobalCPUBudgetPersistence(t *testing.T) {
+	store := NewStore(t.TempDir())
+	for _, value := range []float64{1, 50.5, 100, 0, 101, math.NaN(), math.Inf(1)} {
+		cfg := DefaultConfig()
+		cfg.Preferences.GlobalCPUPercent = &value
+		if err := store.SaveConfig(cfg); err != nil {
+			t.Fatalf("save %g: %v", value, err)
+		}
+		loaded, err := store.LoadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value >= 1 && value <= 100 {
+			if loaded.Preferences.GlobalCPUPercent == nil || *loaded.Preferences.GlobalCPUPercent != value {
+				t.Fatalf("budget %g did not round trip", value)
+			}
+		} else if loaded.Preferences.GlobalCPUPercent != nil {
+			t.Fatalf("invalid budget %g survived persistence", value)
+		}
+	}
+	if err := store.SaveConfig(DefaultConfig()); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := os.ReadFile(filepath.Join(store.Dir, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(payload, []byte(`"globalCPUPercent"`)) {
+		t.Fatal("disabled budget should be omitted from config")
+	}
+}
+
+func TestLoadInvalidGlobalCPUBudgetDisablesOnlyBudget(t *testing.T) {
+	for _, value := range []float64{-10, 0, 0.5, 101} {
+		store := NewStore(t.TempDir())
+		payload := fmt.Sprintf(`{"schemaVersion":1,"preferences":{"managementEnabled":false,"globalCPUPercent":%g}}`, value)
+		if err := os.WriteFile(filepath.Join(store.Dir, "config.json"), []byte(payload), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := store.LoadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if loaded.Preferences.GlobalCPUPercent != nil || loaded.Preferences.ManagementEnabled {
+			t.Fatalf("loading invalid budget %g should disable only budget: %+v", value, loaded.Preferences)
+		}
+	}
+}
 
 func TestLoadConfigReturnsDefaultsWhenMissing(t *testing.T) {
 	cfg, err := NewStore(t.TempDir()).LoadConfig()

@@ -9,15 +9,17 @@ import (
 )
 
 type SchedulerInput struct {
-	Groups      []core.AppGroup
-	Rules       []core.AppRule
-	AppSamples  []core.AppCPUSample
-	Preferences core.GlobalPreferences
-	Runtime     core.RuntimeState
-	Frontmost   core.AppID
-	Policy      core.SystemPolicyState
-	Protections ProtectionState
-	Now         time.Time
+	Groups          []core.AppGroup
+	Rules           []core.AppRule
+	AppSamples      []core.AppCPUSample
+	Preferences     core.GlobalPreferences
+	Runtime         core.RuntimeState
+	Frontmost       core.AppID
+	Policy          core.SystemPolicyState
+	Protections     ProtectionState
+	Now             time.Time
+	TotalCPUPercent float64
+	LogicalCPUCount int
 }
 
 type SchedulerResult struct {
@@ -26,13 +28,15 @@ type SchedulerResult struct {
 	Statuses map[string]core.AppStatus
 }
 
-type Scheduler struct{}
+type Scheduler struct {
+	demandWindows map[string]cpuDemandWindow
+}
 
 func NewScheduler() *Scheduler {
 	return &Scheduler{}
 }
 
-func (scheduler *Scheduler) Evaluate(input SchedulerInput) SchedulerResult {
+func (scheduler *Scheduler) Evaluate(input SchedulerInput) (result SchedulerResult) {
 	now := input.Now
 	if now.IsZero() {
 		now = time.Now()
@@ -40,10 +44,24 @@ func (scheduler *Scheduler) Evaluate(input SchedulerInput) SchedulerResult {
 
 	runtime := input.Runtime.Clone()
 	runtime.EnsureMaps()
-	result := SchedulerResult{
+	result = SchedulerResult{
 		Runtime:  runtime,
 		Statuses: make(map[string]core.AppStatus),
 	}
+	defer clearInactiveCPULimits(&result)
+	defer func() {
+		active := make(map[string]bool)
+		for _, action := range result.Actions {
+			if action.Type == core.ControlActionLimitCPU && action.Message == "global CPU budget" {
+				active[action.AppID.Key()] = true
+			}
+		}
+		for key := range scheduler.demandWindows {
+			if !active[key] {
+				delete(scheduler.demandWindows, key)
+			}
+		}
+	}()
 
 	if !input.Preferences.ManagementEnabled {
 		result.Actions = append(result.Actions, restoreAllActions(runtime, now, core.ControlReasonGlobalDisabled)...)
@@ -304,6 +322,7 @@ func (scheduler *Scheduler) Evaluate(input SchedulerInput) SchedulerResult {
 	}
 
 	result.Runtime = runtime
+	scheduler.applyGlobalCPU(input, &result, now)
 	return result
 }
 

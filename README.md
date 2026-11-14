@@ -90,6 +90,10 @@ work, but should still be available instantly when selected again.
 
 OpenTamer's preferences are available from the `...` button in the main panel.
 
+**Global CPU Limit** in the main panel sets a total-machine CPU budget: Off (default), 10%, 25%, 50%, 75%, 90%, 100%, or a custom value from 1% to 100%. The title shows the current setting. Setting a budget enables the CPU limiter; Off clears only the global budget and leaves per-app limits intact.
+
+The budget is best effort for eligible apps; system and protected processes and apps with Observe Only rules are exempt, so total machine usage can exceed it. Audio playback suspends the global budget. When management or the CPU limiter is disabled, the title marks the saved budget as inactive. It is independent of CPU display mode and differs from per-app limits, which use per-core process CPU. The optional `preferences.globalCPUPercent` config value is omitted when disabled; invalid numeric values are disabled on migration.
+
 <img src="./assets/screenshots/2-prefs.png" alt="OpenTamer preferences" height="200">
 
 ### General
@@ -139,6 +143,13 @@ not pausing.
 
 Audio is also protected. If sound is currently playing, background control rules that could interrupt that work are
 blocked until the audio output is no longer active.
+
+Automatic global CPU limiting additionally excludes macOS session services and requires a known process generation.
+Failed CPU-limit resumes retain ownership and are retried, even after the limit is removed. Normal quit waits for owned
+pauses to be released; a failed resume keeps OpenTamer open and reports recovery in the panel. These safeguards do not
+guarantee recovery after a crash or forced termination. Process checks and POSIX signals are separate operations, so
+concurrent PID reuse or another tool stopping the same process cannot be made atomic by these checks.
+Priority and visibility restoration remain best effort; unresolved changes are retained in the saved runtime state.
 
 ## Privacy
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/config"
@@ -29,6 +30,7 @@ const (
 const (
 	PreferenceManagementEnabled             PreferenceField = "managementEnabled"
 	PreferenceCPULimiterEnabled             PreferenceField = "cpuLimiterEnabled"
+	PreferenceGlobalCPUPercent              PreferenceField = "globalCPUPercent"
 	PreferenceAggregateByName               PreferenceField = "aggregateByName"
 	PreferenceShowMenuBarIcon               PreferenceField = "showMenuBarIcon"
 	PreferenceTopProcessesSort              PreferenceField = "topProcessesSort"
@@ -162,6 +164,12 @@ func setDurationPreference(preferences *core.GlobalPreferences, field Preference
 
 func setFloatPreference(preferences *core.GlobalPreferences, field PreferenceField, value float64) error {
 	switch field {
+	case PreferenceGlobalCPUPercent:
+		if math.IsNaN(value) || math.IsInf(value, 0) || value < 1 || value > 100 {
+			return fmt.Errorf("global CPU limit must be a finite value between 1 and 100")
+		}
+		preferences.GlobalCPUPercent = &value
+		preferences.CPULimiterEnabled = true
 	case PreferenceHighCPUThreshold:
 		if value <= 0 {
 			return fmt.Errorf("high CPU threshold must be positive")
@@ -207,6 +215,8 @@ func setStringPreference(preferences *core.GlobalPreferences, field PreferenceFi
 
 func clearPreference(preferences *core.GlobalPreferences, field PreferenceField) error {
 	switch field {
+	case PreferenceGlobalCPUPercent:
+		preferences.GlobalCPUPercent = nil
 	case PreferenceDisableWhenACBatteryAbove:
 		preferences.DisableWhenACBatteryAbove = nil
 	default:

@@ -18,6 +18,9 @@ const (
 
 func (controller *Controller) buildMenuBarStateLocked(now time.Time, status string) ui.MenuBarViewState {
 	cfg := controller.cfg
+	if controller.shutdownRequested {
+		cfg.Preferences.ManagementEnabled = false
+	}
 	alert := controller.systemAlertLevelLocked(now)
 	logicalCPUCount := runtime.NumCPU()
 	allRows := ui.WithSystemCPUPercent(ui.ApplyTrackingToProcessRows(ui.BuildAllProcessRows(controller.lastGroups, controller.lastAppSamples, controller.lastStatuses, true), cfg.Rules), logicalCPUCount)
@@ -38,6 +41,9 @@ func (controller *Controller) buildMenuBarStateLocked(now time.Time, status stri
 	if status == "" {
 		status = fmt.Sprintf("%d apps observed", len(controller.lastGroups))
 	}
+	if controller.controlError != "" {
+		status = controller.controlError
+	}
 	return ui.MenuBarViewState{
 		Enabled:         cfg.Preferences.ManagementEnabled,
 		ShowMenuBarIcon: cfg.Preferences.ShowMenuBarIcon,
@@ -57,7 +63,7 @@ func (controller *Controller) buildMenuBarStateLocked(now time.Time, status stri
 
 func (controller *Controller) systemAlertLevelLocked(now time.Time) core.AlertLevel {
 	preferences := controller.cfg.Preferences
-	if !preferences.ManagementEnabled {
+	if !preferences.ManagementEnabled || controller.shutdownRequested {
 		controller.systemHighCPUSince = time.Time{}
 		return core.AlertLevelOff
 	}

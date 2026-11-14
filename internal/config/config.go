@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -65,6 +66,9 @@ func MigrateConfig(in Config) (Config, error) {
 	in.Preferences.CPUGraphWindow = core.NormalizeCPUGraphWindow(in.Preferences.CPUGraphWindow)
 
 	in.Preferences.Theme = core.NormalizeThemeMode(in.Preferences.Theme)
+	if budget := in.Preferences.GlobalCPUPercent; budget != nil && (math.IsNaN(*budget) || math.IsInf(*budget, 0) || *budget < 1 || *budget > 100) {
+		in.Preferences.GlobalCPUPercent = nil
+	}
 
 	if in.Preferences.HighCPUThreshold == 0 {
 		in.Preferences.HighCPUThreshold = defaults.Preferences.HighCPUThreshold

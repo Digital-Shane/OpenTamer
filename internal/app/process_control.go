@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/core"
+	apppolicy "github.com/Digital-Shane/open-tamer/internal/policy"
 )
 
 var ErrProcessExited = errors.New("process exited")
@@ -473,12 +474,61 @@ func cpuLimitRequests(groups []core.AppGroup, actions []core.ControlAction) []CP
 		}
 		requests = append(requests, CPULimitRequest{
 			AppID:     action.AppID,
+			Automatic: action.Message == "global CPU budget",
 			Processes: group.Processes,
 			RunFor:    action.RunFor,
 			StopFor:   action.StopFor,
 		})
 	}
 	return requests
+}
+
+// Recovery retains exclusive ownership until the old stop has been released.
+func actionsWithoutRecoveryConflicts(actions []core.ControlAction, pending []core.ProcessRef) []core.ControlAction {
+	if len(pending) == 0 {
+		return actions
+	}
+	owned := make(map[string]bool, len(pending))
+	for _, process := range pending {
+		owned[process.ID.Key()] = true
+	}
+	kept := actions[:0]
+	for _, action := range actions {
+		conflict := false
+		for _, process := range action.Processes {
+			if owned[process.Key()] {
+				conflict = true
+				break
+			}
+		}
+		if !conflict {
+			kept = append(kept, action)
+		}
+	}
+	return kept
+}
+
+func applyControlFailures(result *apppolicy.SchedulerResult, state *core.RuntimeState, groups []core.AppGroup, failures []ControlFailure) {
+	for _, group := range groups {
+		for _, failure := range failures {
+			if _, ok := processInGroup(group, failure.Process.ID); !ok {
+				continue
+			}
+			status := core.AppStatusObserved
+			if failure.Action == core.ControlActionResume {
+				status = core.AppStatusRestoring
+			}
+			key := group.ID.Key()
+			result.Statuses[key] = status
+			appState := state.AppStates[key]
+			appState.Status = status
+			appState.CPULimitRunFor = 0
+			appState.CPULimitStopFor = 0
+			appState.CPULimitTarget = 0
+			state.AppStates[key] = appState
+			break
+		}
+	}
 }
 
 func groupPaused(group core.AppGroup, state core.RuntimeState) bool {

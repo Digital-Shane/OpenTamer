@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/Digital-Shane/open-tamer/internal/app"
 	"github.com/Digital-Shane/open-tamer/internal/config"
@@ -36,17 +37,35 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	menu.SetMenuCommandHandler(controller.HandleMenuCommand)
+	quit := func() bool {
+		return finishShutdown(controller.Shutdown, menu.TerminateMenuBarApp)
+	}
+	menu.SetMenuCommandHandler(func(command string) {
+		if command == "quit" {
+			go quit()
+			return
+		}
+		controller.HandleMenuCommand(command)
+	})
 	controller.Start(ctx)
 	go func() {
 		<-ctx.Done()
-		controller.Shutdown(core.ControlReasonGlobalDisabled)
-		menu.TerminateMenuBarApp()
+		for !quit() {
+			time.Sleep(3 * time.Second)
+		}
 	}()
 
 	if err := menu.RunMenuBarApp(controller.InitialState()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func finishShutdown(shutdown func(core.ControlReason) bool, terminate func()) bool {
+	if !shutdown(core.ControlReasonGlobalDisabled) {
+		return false
+	}
+	terminate()
+	return true
 }
 
 func launchedByLaunchServices() bool {
