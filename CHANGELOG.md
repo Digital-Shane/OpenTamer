@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v1.5.0] - 2026-11-14
+### Added
+- Global CPU Limit with presets and custom budgets from 1% to 100% of total machine CPU capacity
+  - Preserves stricter per-app limits.
+  - Global CPU limiting excludes macOS protected processes.
+### Fixed
+- Group instances of the same app without losing processes when Aggregate By Name is disabled.
+
 ## [v1.4.1] - 2026-09-12
 ### Fixed
 - Set the build deployment target to macOS 14.0.
